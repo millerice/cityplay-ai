@@ -1,0 +1,8 @@
+[project]
+name = "cityplay-ai"
+version = "0.3.0"
+description = "Evidence-led cultural discovery with Qloo and DeepSeek"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+.qloo-private/
+node_modules/
+__pycache__/
+.DS_Store
+*.swp
+*.swo
+# Local handoff notes are not part of the public submission.
+/CityPlay_AI_Codex_Handoff.md

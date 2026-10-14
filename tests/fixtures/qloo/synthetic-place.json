@@ -1,0 +1,24 @@
+{
+  "fixture_source": "synthetic; not a Qloo response or real venue",
+  "payload": {
+    "success": true,
+    "results": {
+      "entities": [
+        {
+          "entity_id": "00000000-0000-0000-0000-000000000000",
+          "name": "SYNTHETIC PLACE",
+          "type": "urn:entity",
+          "subtype": "urn:entity:place",
+          "location": { "lat": 0, "lon": 0 },
+          "query": { "affinity": 0.5 },
+          "properties": {
+            "address": null,
+            "hours": null,
+            "price_level": null,
+            "price_range": { "from": null, "to": null, "currency": null }
+          }
+        }
+      ]
+    }
+  }
+}

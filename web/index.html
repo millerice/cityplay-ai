@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CityPlay AI，用真实文化兴趣关联，探索城市的另一面。">
+  <title>CityPlay AI — Discover Fun Beyond the Ordinary</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/leaflet.css">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/vendor/leaflet.js" defer></script>
+  <script src="/map.js" defer></script>
+  <script src="/app.js" defer></script>
+  <script src="/guess.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#discovery">跳到探索表单</a>
+<div class="page-shell">
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="CityPlay AI 首页"><img src="/favicon.svg" alt="" width="34" height="34"><span>CityPlay<span class="brand-ai">AI</span></span></a>
+    <div class="topbar-right"><span class="availability" id="service-status"><i></i> 正在检查服务</span><span class="preview-badge">本地预览</span></div>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="tiny-star">✳</span> DISCOVER FUN BEYOND THE ORDINARY</p>
+        <h1 id="hero-title">从你的口味，<br>发现<span class="accent-word">另一座城市<span class="underline-stroke"></span></span>。</h1>
+        <p class="hero-description">喜欢的音乐人、电影或书籍，藏着你的文化口味。<br>让 Qloo 的跨领域关联带你发现真实地点。</p>
+        <div class="hero-proof"><span class="proof-dot"></span> 真实 Qloo 兴趣关联 <span class="proof-separator">/</span> 每个建议都有来源</div>
+      </div>
+      <div class="taste-art" aria-hidden="true">
+        <div class="art-grid"></div><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+        <div class="art-cross cross-one">+</div><div class="art-cross cross-two">+</div>
+        <div class="art-label label-one"><span>♫</span> JAZZ</div>
+        <div class="art-label label-two"><span>▤</span> BOOKSHOPS</div>
+        <div class="art-label label-three"><span>◉</span> COFFEE</div>
+        <div class="art-center"><svg viewBox="0 0 60 60"><path d="M30 7 42 29 30 53 18 29Z" fill="currentColor"/><path d="m30 7 12 22H30Z" fill="#f6f3e9"/></svg></div>
+        <div class="art-caption"><span>YOUR TASTE</span><span class="art-arrow">→</span><span>YOUR CITY</span></div>
+      </div>
+    </section>
+
+    <section class="workspace" id="discovery" aria-labelledby="discovery-title">
+      <div class="section-heading"><div><p class="eyebrow">01 / YOUR NEXT DISCOVERY</p><h2 id="discovery-title">你的文化口味，会带你去哪里？</h2></div><p class="section-aside">少一点攻略，多一点探索。</p></div>
+      <form id="query-form" class="query-panel">
+        <fieldset id="query-fields">
+          <div class="location-row">
+            <div class="city-switch" aria-label="选择探索城市">
+              <button type="button" class="city-button selected" data-city="new_york" aria-pressed="true">纽约周边 <span>主体验</span></button>
+              <button type="button" class="city-button" data-city="shanghai" aria-pressed="false">上海 <span>实验支持</span></button>
+            </div>
+            <label class="radius-control">探索半径<select id="radius" aria-label="探索半径"><option value="5000">5 km</option><option value="10000" selected>10 km</option><option value="20000">20 km</option></select></label>
+          </div>
+          <label class="input-heading" for="query">说说喜欢的音乐人、电影或书籍，以及想探索的场所</label>
+          <textarea id="query" maxlength="1800" rows="3" placeholder="比如：喜欢 Miles Davis，想看看附近书店。或喜欢电影《Blade Runner》，想找咖啡场所。" required></textarea>
+          <div class="guess-entry"><button type="button" id="guess-open" class="secondary-button">✨ 猜你爱好</button><span>不知道喜欢什么？轻松选几张卡片 · 约 1～2 分钟 · 随时跳过</span></div>
+          <div class="suggestions" aria-label="灵感示例，不限于这些组合"><span>灵感示例</span><button type="button" data-example="books">Miles Davis × 书店 <span>↗</span></button><button type="button" data-example="coffee">爵士 × 咖啡 <span>↗</span></button><button type="button" data-example="movie">Blade Runner × 咖啡 <span>↗</span></button></div>
+          <p class="field-help">这些只是灵感示例，不限于这三组。自由填写即可；系统会根据实际数据匹配，并说明尚未接入的方向。</p>
+          <div class="query-bottom"><div class="area-hint"><span class="location-mark">⌖</span><div><span id="area-label">纽约下城示例中心</span><small>附近范围，非城市行政边界</small></div><details class="center-settings"><summary>调整中心</summary><div class="coordinate-inputs"><label>纬度<input id="latitude" type="number" step="any" min="-90" max="90" required value="40.722668"></label><label>经度<input id="longitude" type="number" step="any" min="-180" max="180" required value="-73.99823"></label></div></details></div><button class="primary-button" id="parse-button" type="submit">理解我的需求 <span>↗</span></button></div>
+          <p class="privacy-note">仅发送兴趣与所选区域；请勿输入姓名、联系方式等个人信息。</p>
+        </fieldset>
+      </form>
+
+      <div class="notice" id="notice" role="alert" hidden></div>
+      <section class="progress-panel" id="progress-panel" role="status" aria-live="polite" hidden>
+        <div class="progress-title"><span class="loading-orbit"></span><div><strong id="progress-title">正在理解你的需求</strong><p id="progress-description">从你的描述中整理兴趣与条件。</p></div></div>
+        <ol class="progress-steps" id="progress-steps"><li>理解兴趣</li><li>探索真实关联</li><li>检查地点与来源</li><li>整理少量建议</li></ol>
+      </section>
+
+      <section class="confirmation" id="confirmation" aria-labelledby="confirmation-title" hidden>
+        <div class="section-heading"><div><p class="eyebrow">02 / MAKE IT YOURS</p><h2 id="confirmation-title">先确认，我理解得对吗？</h2></div><span class="quiet-badge">你决定探索的方向</span></div>
+        <form id="confirm-form"><fieldset id="confirm-fields">
+          <p id="intent-summary" class="intent-summary"></p>
+          <p id="default-plan" class="constraint-note" hidden></p>
+          <div class="clarifications" id="clarifications" hidden></div>
+          <details id="intent-details" class="intent-details"><summary>修改兴趣和详细条件 <span>＋</span></summary>
+          <div class="confirmation-grid"><div class="interest-column"><h3>你的文化兴趣</h3><div id="interest-fields"></div><button type="button" class="text-button" id="add-interest">＋ 添加一个兴趣</button><p class="field-help">人物或作品可选择类型；概念可用 Jazz、Coffee 等关键词。</p></div><div class="category-column"><h3>想探索的场所</h3><div id="category-fields" class="check-chips"></div><h3 class="exclusion-heading">这次避开</h3><div id="exclude-fields" class="check-chips"></div></div></div>
+          <div class="constraint-fields"><label>可用时间（分钟）<input id="minutes" type="number" min="1" max="1440" placeholder="不限制"></label><label>最高预算<div class="budget-input"><input id="budget" type="number" min="0" step="0.01" placeholder="不限制"><select id="currency" aria-label="预算币种"><option value="USD">USD</option><option value="CNY">CNY</option></select></div></label><div class="constraint-toggles"><label><input id="open-now" type="checkbox"> 必须现在营业</label><label><input id="novelty" type="checkbox"> 必须从未去过</label><label><input id="strict-city" type="checkbox"> 必须在市界内</label></div></div>
+          <p class="constraint-note">这些条件会被严格保留。营业、费用或行程时间缺少证据时，我们会先说明数据不足。</p>
+          </details>
+          <div class="confirmation-bottom"><p id="confirmed-area"></p><button class="primary-button" id="discover-button" type="submit">确认，开始探索 <span>↗</span></button></div>
+        </fieldset></form>
+      </section>
+
+      <section class="results" id="results" aria-labelledby="results-title" hidden>
+        <div class="section-heading"><div><p class="eyebrow">03 / FOLLOW YOUR CURIOSITY</p><h2 id="results-title">这几个方向，值得了解。</h2><p class="results-subtitle" id="results-subtitle"></p></div><button class="secondary-button" id="again-button" type="button">换一批 <span>↻</span></button></div>
+        <div id="result-message" class="result-message" hidden></div>
+        <div id="choices" class="choices" hidden></div>
+        <section id="map-panel" hidden aria-label="推荐地点地图"><p class="map-caption">Qloo 原始经纬度 · 坐标基准待核验 · 点击编号查看对应地点</p><div id="recommendation-map"></div><p id="map-status" class="field-help" role="status"></p></section>
+        <div id="agent-evidence" class="agent-evidence" hidden></div>
+        <div id="cards" class="cards"></div>
+        <section id="comparison-panel" class="comparison-panel" hidden><h3>文化口味，改变了什么？</h3><p>保持类别、范围和条件相同，比较不添加文化兴趣信号的 Qloo 候选。它仍使用 Qloo，不是 LLM-only 对照。</p><button id="compare-button" type="button" class="secondary-button">查看同类别基线 ↗</button><div id="comparison-result" aria-live="polite"></div></section>
+        <details class="decision-details" id="decision-details" hidden><summary>这些建议是怎么来的？<span>＋</span></summary><div id="decision-content"></div></details>
+      </section>
+
+      <section class="how-it-works" id="how-it-works" aria-label="探索如何发生"><div class="how-heading"><span class="small-compass">✳</span><span>从你的兴趣，走向真实城市。</span></div><div class="how-items"><article><span class="how-number">01</span><div><h3>说说你的口味</h3><p>音乐、电影、书籍，都是探索的起点。</p></div></article><article><span class="how-number">02</span><div><h3>发现文化关联</h3><p>Qloo 提供真实的兴趣关联与地点候选。</p></div></article><article><span class="how-number">03</span><div><h3>带着依据出发</h3><p>看见来源，也看见仍需确认的现实条件。</p></div></article></div></section>
+    </section>
+  </main>
+  <footer><span>CityPlay AI <span class="footer-dot">·</span> Discover fun beyond the ordinary.</span><span>Powered by Qloo &amp; DeepSeek <span class="footer-dot">/</span> Local MVP</span></footer>
+</div>
+<dialog id="guess-dialog" aria-labelledby="guess-title"><div class="guess-top"><span class="eyebrow">GUESS MY INTERESTS</span><button type="button" id="guess-close" class="text-button">退出 ×</button></div><h2 id="guess-title">找找让你心动的小事</h2><p class="field-help">无需注册，也没有标准答案。选你有感觉的，其他跳过就好。</p><div id="guess-content"></div><p id="guess-error" role="alert"></p><div id="guess-actions" class="guess-actions"></div></dialog>
+</body>
+</html>

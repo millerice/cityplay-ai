@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+.qloo-private
+__pycache__
+**/__pycache__
+*.pyc
+node_modules
+.DS_Store
