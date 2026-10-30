@@ -42,6 +42,34 @@ def verifier():
 
 
 class EngineTests(unittest.TestCase):
+    def test_place_description_uses_only_actual_string_fields(self):
+        for fields,expected in [({'short_description':'  Actual short intro  ','description':'Long intro'},'Actual short intro'),
+                                ({'short_description':[],'description':'Actual full intro'},'Actual full intro'),
+                                ({'description':{'invented':'no'}},None),
+                                ({'description':'x'*1000},'x'*800)]:
+            candidate=place();candidate['properties'].update(fields)
+            result=DiscoveryEngine(FakeQloo([candidate]),verifier()).run(intent(),Area(0,0))
+            self.assertEqual(result['cards'][0]['description'],expected)
+
+    def test_name_normalization_does_not_replace_an_unrelated_work(self):
+        from cityplay.engine import identity_name
+        self.assertEqual(identity_name('迈克尔 杰克逊'),identity_name('迈克尔杰克逊'))
+        self.assertNotEqual(identity_name('鲁滨孙漂流记'),identity_name('重生手记：一个癌症患者的康复之路'))
+
+    def test_explanation_only_accepts_known_finite_contributors(self):
+        from cityplay.engine import recommendation_evidence
+        data={'query':{'explainability':{'signal.interests.entities':[
+            {'entity_id':'known','score':0.7},{'entity_id':'invented','score':0.9},
+            {'entity_id':'known','score':float('nan')},{'entity_id':'known','score':True}]}}}
+        evidence=recommendation_evidence(data,[{'id':'known','name':'Synthetic Artist'}])
+        self.assertEqual(evidence['contributors'],[{'name':'Synthetic Artist','score':0.7}])
+        self.assertEqual(recommendation_evidence({},[])['status'],'unavailable')
+
+    def test_nearby_feedback_reorders_only_eligible_qloo_candidates(self):
+        q=FakeQloo([place('synthetic-a',lat=.03),place('synthetic-b',lat=.001),place('synthetic-c',genre='Hotel',lat=0)])
+        r=DiscoveryEngine(q,verifier()).run(intent(categories=['bookstore']),Area(0,0),prefer_nearby=True)
+        self.assertEqual([c['entity_id'] for c in r['cards']],['synthetic-b','synthetic-a'])
+
     def test_generic_and_independent_bookstore_filters_are_distinct(self):
         for independent, expected in [(False, "urn:tag:category:synthetic:books"), (True, "urn:tag:setting:synthetic:books")]:
             qloo = FakeQloo()

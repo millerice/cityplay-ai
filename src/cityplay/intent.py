@@ -4,7 +4,7 @@ import math
 import re
 from .transport import ServiceError
 
-CATEGORIES = {"bookstore", "coffee", "live_music", "park", "museum"}
+CATEGORIES = {"bookstore", "coffee", "live_music", "park", "museum", 'restaurant', 'bakery', 'gallery', 'cinema', 'theater', 'record_store', 'clothing', 'garden'}
 EXCLUSIONS = CATEGORIES | {"hotel", "mall", "recording_studio", "tourist_attraction"}
 ENTITY_TYPES = {"artist", "movie", "book", "brand", "person", "podcast", "tv_show", "video_game"}
 
@@ -72,7 +72,7 @@ class Intent:
             interests.append(Interest(kind, text(item.get("query"), field=f"interests[{index}].query"), subtype))
         for name, choices in [("categories", CATEGORIES), ("exclude_categories", EXCLUSIONS)]:
             items = value.get(name, [])
-            if not isinstance(items, list) or len(items) > 5 or any(x not in choices for x in items):
+            if not isinstance(items, list) or len(items) > (3 if name == "categories" else len(EXCLUSIONS)) or any(x not in choices for x in items):
                 raise IntentValidationError(name, "Unsupported category or exclusion")
             if len(items) != len(set(items)):
                 raise IntentValidationError(name, "Duplicate categories")
@@ -134,9 +134,9 @@ Broad watching movies is tag movies, not an unnamed movie entity; walking is tag
 travel is tag travel. A movie/book/artist entity needs a concrete public name.
 Rafting, bungee jumping, camping, pottery, dance and social-event requests are outside this
 MVP's supported venue categories: retain these as clarification requirements, never invent
-a supported category for them. Mention that this MVP retrieves bookstore/coffee/live_music/park/museum.
-Tag query concepts use English. Categories are bookstore,coffee,live_music,
-park,museum; exclusions may also be hotel,mall,recording_studio,tourist_attraction.
+a supported category for them. Do not turn a venue into a promise of events, tickets or activities.
+Tag query concepts use English. Categories are bookstore,coffee,live_music,park,museum,restaurant,bakery,gallery,cinema,theater,record_store,clothing,garden. At most 3 categories; [] means automatic mix. More explicit requests require clarification; never silently drop them.
+Exclusions accept these categories; exclusions may also be hotel,mall,recording_studio,tourist_attraction.
 Explicit 'independent bookstore' means category bookstore. Jazz/爵士 is tag jazz; coffee/咖啡
 is tag coffee; science fiction/科幻 is tag science fiction. Never assume currency from city;
 unspecified currency needs clarification. 'Today' does not mean open_now unless user requires it.
@@ -167,7 +167,7 @@ class ModelIntentParser:
                     raise
                 repair = "\nPrevious output was unavailable or invalid JSON; return valid JSON matching the schema."
         # Preserve explicit venue requests even when the model omits a category.
-        venue_words = {"bookstore":r"书店|bookstores?|bookshops?", "coffee":r"咖啡(?:店|场所)?|coffee(?: shops?)?|cafes?", "live_music":r"现场音乐|live music", "park":r"公园|parks?", "museum":r"博物馆|museums?"}
+        venue_words = {"bookstore":r"书店|bookstores?|bookshops?", "coffee":r"咖啡(?:店|场所)?|coffee(?: shops?)?|cafes?", "live_music":r"现场音乐|live music", "park":r"公园|parks?", "museum":r"博物馆|museums?",'restaurant':'餐厅|餐馆|restaurants?','bakery':'烘焙|面包店|甜品店|baker(?:y|ies)|cupcakes?','gallery':'画廊|art galler(?:y|ies)','cinema':'电影院|影院|cinemas?|movie theaters?','theater':'剧院|performing arts theaters?','record_store':'唱片店|record stores?|cd stores?','clothing':'服饰店|服装店|clothing stores?','garden':'花园|植物园|gardens?'}
         for clause in re.split(r"[，,。；;\n]", query):
             clause = re.sub(r"《[^》]*》", "", clause)
             if re.search(r"不要|不想|避开|避免|不去|\bavoid\b|\bno\b", clause, re.I):
@@ -175,7 +175,8 @@ class ModelIntentParser:
             if re.search(r"想|找|探索|逛|\bwant\b|\bfind\b|\bexplore\b|\bvisit\b|looking for", clause, re.I):
                 for category, expression in venue_words.items():
                     if re.search(expression, clause, re.I) and category not in intent.categories:
-                        intent.categories.append(category)
+                        if len(intent.categories)<3:intent.categories.append(category)
+                        else:intent.clarifications.append('本轮最多选择 3 类场所；另有明确要求：'+category+'，请确认本次重点。')
         intent.parser = self.client.model
         if re.search(r"预算|不超过|\bbudget\b|\bunder\s*\$|\$\s*\d|美元|\d\s*元|\bfree\b", query, re.I) and intent.max_budget is None:
             intent.clarifications.append("Budget constraint needs an explicit amount and currency.")
@@ -203,7 +204,7 @@ class ModelIntentParser:
         aliases = {'漂流':'rafting', '蹦极':'bungee', '露营':'camping', '陶艺':'pottery', '舞蹈':'dance', '社交活动':'social'}
         has_unsupported_notice = bool(re.search(r'不支持|不在.{0,30}支持|无法支持|无法提供|cannot support|not support|outside', joined)) and all(name in joined or aliases[name] in joined for name in unsupported)
         if unsupported and not has_unsupported_notice:
-            intent.clarifications.append("当前地点检索尚不支持：" + "、".join(unsupported) + "。目前支持书店、咖啡、现场音乐、公园、博物馆；若本轮暂不要求这些活动，可取消此项。")
+            intent.clarifications.append("当前地点检索尚不支持：" + "、".join(unsupported) + "。目前支持餐饮、文化、音乐、购物与户外等已验证场所类别；若本轮暂不要求这些活动，可取消此项。")
         intent.clarifications = list(dict.fromkeys(intent.clarifications))
         if len(intent.clarifications) > 8:
             # Preserve every requirement while maintaining the confirmation schema's bound.

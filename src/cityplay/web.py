@@ -25,13 +25,16 @@ from .intent import Area, Intent, ModelIntentParser
 from .transport import DeepSeekClient, QlooClient, ServiceError, network
 from .verify import WebsiteVerifier
 from .profile import validate_answers, generate, confirm
+from .parallel import build_parallel, public_result
+from .taste_cards import load_cards, selected_tastes
+from .library import LibraryStore
 
 PRESETS = {
     "new_york": {"lat": 40.722668, "lon": -73.99823, "label": "纽约下城示例中心"},
     # 31°14′ N, 121°29′ E; public Shanghai Basic Facts, not private Qloo data.
     "shanghai": {"lat": 31 + 14/60, "lon": 121 + 29/60, "label": "上海示例中心 · 实验支持"},
 }
-STATIC = {"/map.js": ("map.js", "text/javascript; charset=utf-8"),
+STATIC = {"/library.js": ("library.js", "text/javascript; charset=utf-8"),"/map.js": ("map.js", "text/javascript; charset=utf-8"),"/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
           "/vendor/leaflet.js": ("vendor/leaflet.js", "text/javascript; charset=utf-8"),
           "/vendor/leaflet.css": ("vendor/leaflet.css", "text/css; charset=utf-8"),"/guess.js": ("guess.js", "text/javascript; charset=utf-8"),"/": ("index.html", "text/html; charset=utf-8"),
           "/app.js": ("app.js", "text/javascript; charset=utf-8"),
@@ -41,11 +44,13 @@ STATIC = {"/map.js": ("map.js", "text/javascript; charset=utf-8"),
 
 @dataclass
 class Session:
+    profile_id: str = ''
     csrf: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     touched: float = field(default_factory=time.monotonic)
     draft_id: str | None = None
     intent: dict | None = None
     city: str | None = None
+    city_conflict: dict | None = None
     area: dict | None = None
     confirmed: dict | None = None
     shown: set = field(default_factory=set)
@@ -54,6 +59,7 @@ class Session:
     busy: bool = False
     jobs: dict = field(default_factory=dict)
     submissions: list = field(default_factory=list)
+    card_submissions: list = field(default_factory=list)
     qloo: object = None
     verifier: object = None
     independent_bookstore: bool = False
@@ -61,6 +67,15 @@ class Session:
     profile_draft_id: str | None = None
     profile_confirmed: dict | None = None
     profile_receipt: dict | None = None
+    last_cards: list = field(default_factory=list)
+    feedback: dict = field(default_factory=dict)
+    prefer_nearby: bool = False
+    parallel_versions: list = field(default_factory=list)
+    parallel_familiar: dict = field(default_factory=dict)
+    taste_catalog: dict = field(default_factory=dict)
+    taste_choices: list = field(default_factory=list)
+    taste_curiosity: dict | None = None
+    taste_starting_mode: str = 'likes'
 
 
 class Application:
@@ -71,6 +86,7 @@ class Application:
         self.qloo_factory = qloo_factory or (lambda: QlooClient(self.settings.qloo_key, sender=self.qloo_network, max_calls=40))
         self.verifier_factory = verifier_factory or (lambda: WebsiteVerifier(max_checks=12))
         self.evidence_dir = evidence_dir or ROOT / ".qloo-private" / "stage3"
+        self.library=LibraryStore(self.evidence_dir.parent/'cityplay.sqlite3')
         self.sessions, self.lock = {}, threading.RLock()
         self.slots = threading.BoundedSemaphore(2)
         self.network_lock = threading.Lock()
@@ -105,23 +121,24 @@ class Application:
                 return identifier, existing
             if not create or len(self.sessions) >= 16:
                 return None, None
-            identifier = secrets.token_urlsafe(32)
-            value = Session(qloo=self.qloo_factory(), verifier=self.verifier_factory())
+            identifier = identifier if isinstance(identifier,str) and re.fullmatch(r'[A-Za-z0-9_-]{43}',identifier) and self.library.has_profile(identifier) else secrets.token_urlsafe(32)
+            value = Session(profile_id=identifier,qloo=self.qloo_factory(), verifier=self.verifier_factory())
             self.sessions[identifier] = value
             return identifier, value
 
     def start(self, session, kind, payload):
         with self.lock:
             now = time.monotonic()
-            session.submissions = [x for x in session.submissions if now-x < 60]
+            bucket=session.card_submissions if kind=='taste_cards' else session.submissions
+            bucket[:]=[x for x in bucket if now-x < 60]
             if session.busy:
                 raise ServiceError("JOB_ALREADY_RUNNING", status=409)
-            if len(session.submissions) >= 6:
+            if len(bucket) >= (10 if kind=='taste_cards' else 6):
                 raise ServiceError("LOCAL_REQUEST_LIMIT", status=429)
             if not self.slots.acquire(blocking=False):
                 raise ServiceError("LOCAL_SERVICE_BUSY", retryable=True, status=429)
             session.busy = True
-            session.submissions.append(now)
+            bucket.append(now)
             identifier = str(uuid.uuid4())
             session.jobs[identifier] = {"job_id": identifier, "kind": kind, "status": "running", "progress": "PARSING" if kind == "parse" else "INTENT_PARSED"}
             # Bound retained browser results in memory.
@@ -169,21 +186,33 @@ class Application:
                 model_trace = model.trace
                 if intent.city != city:
                     intent.clarifications.append("The requested city differs from the selected area; choose a matching area.")
+                mentioned={name for name,pattern in [('new_york',r'纽约|\bnew york\b'),('shanghai',r'上海|\bshanghai\b')] if re.search(pattern,query,re.I)}
+                requested=next(iter(mentioned)) if len(mentioned)==1 else None
+                conflict={'selected':city,'requested':requested} if requested and requested!=city else None
                 values = asdict(intent)
                 values.pop("parser", None)
                 with self.lock:
                     session.draft_id, session.intent = str(uuid.uuid4()), values
                     session.area, session.city = asdict(area), city
+                    session.city_conflict=conflict
                     session.independent_bookstore = bool(re.search(r"independent book|indie book|独立书店", query, re.I))
                     session.confirmed, session.shown, session.selections = None, set(), {}
+                    session.last_cards, session.prefer_nearby = [], False
+                    session.parallel_versions, session.parallel_familiar = [], {}
+                    session.taste_curiosity=None;session.taste_starting_mode='likes'
                 result = {"status": "needs_confirmation", "draft_id": session.draft_id, "intent": values,
-                          "city": city, "area": asdict(area), "model": model.model}
+                          "city": city, "area": asdict(area), "model": model.model,"city_conflict":conflict}
             elif kind == "compare":
                 result = self.compare(session, payload)
+            elif kind == "parallel":
+                result = self.parallel(session, payload)
+            elif kind == 'taste_cards':
+                result = load_cards(session,payload,(self.settings.qloo_key,self.settings.deepseek_key))
+                self.library.put_entities(result['cards'])
             else:
                 result = self.discover(session, payload, identifier)
             evidence = {"job_id": identifier, "kind": kind, "result": result, "model_tools": model_trace}
-            if kind != "guess":
+            if kind not in {"guess", "taste_cards"}:
                 save_private(self.evidence_dir / (identifier + ".json"), evidence, self.settings)
             completion = {"status": "completed", "progress": "DONE", "result": result}
         except ServiceError as error:
@@ -234,11 +263,133 @@ class Application:
         session.qloo.max_calls = min(40, session.qloo.calls+14)
         before = session.qloo.calls
         result = DiscoveryEngine(session.qloo, session.verifier).run(intent, Area(**session.area),
-            seen_ids=list(session.comparison_seen), independent_bookstore=session.independent_bookstore, allow_no_signals=True)
+            seen_ids=list(session.comparison_seen), independent_bookstore=session.independent_bookstore, allow_no_signals=True, prefer_nearby=session.prefer_nearby)
         # Same venue/radius/hard constraints/checks and seen-list snapshot; no profile mutation.
         return {key:value for key,value in result.items() if key in {"status","cards","source","error","questions","trace","diagnostics","taste_inputs","recommendation_mode"}} | {"qloo_network_attempts":session.qloo.calls-before}
 
+    def prepare_taste(self, session, payload):
+        city=payload['city'];area=Area(**payload['area'])
+        if city not in PRESETS: raise ValueError('Unsupported city')
+        self.validate_area(city,area)
+        intent=Intent.from_dict({'city':city,'interests':payload['interests'],'categories':payload['categories'],'exclude_categories':payload.get('exclude_categories',[])})
+        if not intent.interests: raise ValueError('Choose at least one taste')
+        for interest in intent.interests:
+            if any(key and key in interest.query for key in (self.settings.qloo_key,self.settings.deepseek_key)):
+                raise ServiceError('SENSITIVE_INPUT_REJECTED',status=400)
+        values=asdict(intent);values.pop('parser')
+        with self.lock:
+            if session.busy: raise ServiceError('JOB_ALREADY_RUNNING',status=409)
+            session.draft_id=str(uuid.uuid4());session.intent=values
+            session.area=asdict(area);session.city=city;session.confirmed=None;session.city_conflict=None
+            session.shown=set();session.selections={};session.last_cards=[]
+            session.parallel_versions=[];session.parallel_familiar={};session.prefer_nearby=False;session.independent_bookstore=False
+            session.taste_curiosity=None;session.taste_starting_mode='likes'
+        return {'status':'needs_confirmation','draft_id':session.draft_id,'intent':values,'area':session.area,'city':city,'model':'structured taste input'}
+
+    def browse_library(self,session,payload):
+        if set(payload)-{'domain','query','offset'}:raise ValueError('Invalid browse')
+        query=payload.get('query','')
+        if not isinstance(query,str):raise ValueError('Invalid query')
+        if any(secret and secret in query for secret in (self.settings.qloo_key,self.settings.deepseek_key)):raise ServiceError('SENSITIVE_INPUT_REJECTED',status=400)
+        result=self.library.browse(payload.get('domain','all'),query,payload.get('offset',0),discovery_only=not query.strip())
+        for card in result['cards']:session.taste_catalog[card['id']]=card
+        choices=self.library.choices(session.profile_id)
+        for item in choices:session.taste_catalog[item['id']]=item
+        result['choices']=choices
+        return result
+
+    def library_choice(self,session,payload):
+        if set(payload)!={'id','choice'} or not isinstance(payload['id'],str):raise ValueError('Invalid choice')
+        card=session.taste_catalog.get(payload['id']) or self.library.card_by_id(payload['id'])
+        if not card:raise ValueError('Unknown card')
+        return {'choices':self.library.choose(session.profile_id,card,payload['choice'])}
+
+    def apply_taste_cards(self,session,payload):
+        with self.lock:
+            if session.busy: raise ServiceError('JOB_ALREADY_RUNNING',status=409)
+            likes,curious=selected_tastes(session,payload['items'])
+            prior=None
+            prior_conflict=copy.deepcopy(session.city_conflict) if payload.get('draft_id') else None
+            prior_independent=session.independent_bookstore
+            if payload.get('draft_id'):
+                if payload['draft_id']!=session.draft_id or not session.intent: raise ServiceError('DRAFT_EXPIRED',status=409)
+                prior=copy.deepcopy(session.intent)
+                if payload['city']!=session.city or payload['area']!=session.area: raise ValueError('Area changed')
+            anchors=likes or curious
+            values={key:payload[key] for key in ('city','area','categories')}
+            if 'exclude_categories' in payload:values['exclude_categories']=payload['exclude_categories']
+            values['interests']=[{'kind':'entity','query':x['name'],'entity_type':x['entity_type']} for x in anchors]
+            draft=self.prepare_taste(session,values)
+            if prior:
+                for key in ('exclude_categories','max_budget','available_minutes','open_now','strict_city','novelty_requested','clarifications'):
+                    if key=='exclude_categories' and key in payload:continue
+                    draft['intent'][key]=prior[key]
+                session.intent=copy.deepcopy(draft['intent'])
+                session.independent_bookstore=prior_independent
+                session.city_conflict=prior_conflict
+                draft['city_conflict']=prior_conflict
+            session.taste_choices=copy.deepcopy(payload['items'])
+            self.library.merge_choices(session.profile_id,[(x,'like') for x in likes]+[(x,'curious') for x in curious])
+            session.taste_curiosity=curious[0] if curious and likes else None
+            draft['selections']={f'interests.{i}':x['id'] for i,x in enumerate(anchors)}
+            draft['curiosity']=session.taste_curiosity
+            draft['active_tastes']=[{**x,'choice':'like'} for x in likes]+[{**x,'choice':'curious'} for x in curious]
+            draft['starting_mode']='curiosity' if not likes else 'likes'
+            session.taste_starting_mode=draft['starting_mode']
+            return draft
+
+    def parallel(self, session, payload):
+        if payload.get('draft_id') != session.draft_id or not session.confirmed or not session.parallel_familiar.get('cards'):
+            raise ServiceError('DRAFT_EXPIRED', status=409)
+        original=copy.deepcopy(session.parallel_versions[0]["intent"] if session.parallel_versions else session.confirmed)
+        alternative=payload.get('alternative')
+        if alternative is None and session.taste_curiosity:
+            c=session.taste_curiosity
+            alternative={'kind':'entity','query':c['name'],'entity_type':c['entity_type']}
+        if alternative is not None:
+            candidate={**original,'interests':[alternative]}
+            Intent.from_dict(candidate)
+            if any(key and key in alternative['query'] for key in (self.settings.qloo_key,self.settings.deepseek_key)):
+                raise ServiceError('SENSITIVE_INPUT_REJECTED',status=400)
+        context={'kind':'parallel','intent':original,'area':session.area,'alternative':alternative,'feedback':session.feedback,
+                 'independent':session.independent_bookstore,'nearby':session.prefer_nearby}
+        cached=self.library.get_snapshot(session.profile_id,context)
+        if cached:
+            session.parallel_versions=cached['versions']
+            for version in session.parallel_versions:
+                version['result'].update(source='cached_qloo',cache_origin='sqlite',cached_at=cached['cached_at'])
+            return {'status':'parallel','versions':session.parallel_versions}
+        session.qloo.max_calls=min(40,session.qloo.calls+14)
+        session.parallel_versions=build_parallel(session)
+        if alternative:
+            values={**original,'interests':[alternative]}
+            result=DiscoveryEngine(session.qloo,session.verifier).run(Intent.from_dict(values),Area(**session.area),
+                seen_ids=list(session.feedback),independent_bookstore=session.independent_bookstore,prefer_nearby=session.prefer_nearby,
+                selections={'interests.0':session.taste_curiosity['id']} if session.taste_curiosity and alternative['query']==session.taste_curiosity['name'] else {})
+            session.parallel_versions.append({'id':'alternative','title':'另一种我','subtitle':'你主动选择的新起点',
+                'intent':values,'result':result,'path':[],'boundary':'由你选择的尝试方向，不是系统发现的隐藏人格。'})
+        result={'status':'parallel','versions':[{**v,'result':public_result(v['result'])} for v in session.parallel_versions]}
+        if all(v['result'].get('status') in {'partial','empty'} for v in session.parallel_versions):self.library.put_snapshot(session.profile_id,context,result)
+        return result
+
+    def select_parallel(self, session, payload):
+        with self.lock:
+            if session.busy: raise ServiceError('JOB_ALREADY_RUNNING',status=409)
+            if payload.get('draft_id') != session.draft_id: raise ServiceError('DRAFT_EXPIRED',status=409)
+            version=next((x for x in session.parallel_versions if x['id']==payload.get('version')),None)
+            if not version: raise ValueError('Unknown parallel version')
+            session.confirmed=copy.deepcopy(version['intent'])
+            session.selections={}
+            result=copy.deepcopy(version['result'])
+            result['cards']=[x for x in result.get('cards',[]) if x['entity_id'] not in session.feedback]
+            if result.get('status')=='partial' and not result['cards']: result['status']='empty'
+            session.last_cards=result['cards']
+            session.shown=set(session.feedback)|{x['entity_id'] for x in result['cards']}
+            session.comparison_seen=list(session.feedback)
+            return {'version':version['id'],'intent':session.confirmed,'result':public_result(result)}
+
     def discover(self, session, payload, identifier):
+        if session.city_conflict:raise ServiceError('CITY_SELECTION_REQUIRED',status=409)
         if payload.get("draft_id") != session.draft_id or not session.intent:
             raise ServiceError("DRAFT_EXPIRED", status=409)
         if payload.get("again"):
@@ -248,6 +399,10 @@ class Application:
         else:
             values = payload.get("intent")
         intent = Intent.from_dict(values)
+        feedback = payload.get('feedback')
+        if feedback is not None:
+            if not isinstance(feedback, dict) or set(feedback) != {'entity_id','reason'} or feedback.get('reason') not in {'not_now','experienced_dislike','too_far'} or feedback.get('entity_id') not in {x['entity_id'] for x in session.last_cards}:
+                raise ValueError('Invalid feedback')
         if any(secret and secret in interest.query for secret in [self.settings.qloo_key, self.settings.deepseek_key] for interest in intent.interests):
             raise ServiceError("SENSITIVE_INPUT_REJECTED", status=400)
         if intent.city != session.city:
@@ -257,9 +412,17 @@ class Application:
             session.shown, session.selections = set(), {}
         session.confirmed = asdict(intent)
         session.confirmed.pop("parser", None)
+        if feedback:
+            session.feedback[feedback['entity_id']] = feedback['reason']
+            if feedback['reason'] == 'too_far': session.prefer_nearby = True
+            # Reconsider other cards, exclude the rejected venue without inventing a taste change.
+            session.shown = set(session.feedback)
+        session.shown.update(session.feedback)
         selections = payload.get("selections", {})
         if not isinstance(selections, dict) or len(selections) > 8 or any(not isinstance(k, str) or not isinstance(v, str) for k, v in selections.items()):
             raise ValueError("Invalid selections")
+        if any(secret and secret in part for secret in (self.settings.qloo_key,self.settings.deepseek_key) for k,v in selections.items() for part in (k,v)):
+            raise ServiceError('SENSITIVE_INPUT_REJECTED',status=400)
         session.selections.update(selections)
         def progress(state, details):
             with self.lock:
@@ -268,14 +431,25 @@ class Application:
         session.qloo.max_calls = min(40, session.qloo.calls+14)
         before = session.qloo.calls
         session.comparison_seen = list(session.shown)
-        result = DiscoveryEngine(session.qloo, session.verifier).run(intent, area,
-                   seen_ids=list(session.shown), selections=session.selections, on_progress=progress, independent_bookstore=session.independent_bookstore)
+        context={'intent':session.confirmed,'area':session.area,'seen':sorted(session.shown),'selections':session.selections,
+                 'independent':session.independent_bookstore,'nearby':session.prefer_nearby}
+        result=self.library.get_snapshot(session.profile_id,context)
+        if result is None:
+            result = DiscoveryEngine(session.qloo, session.verifier).run(intent, area,
+                       seen_ids=list(session.shown), selections=session.selections, on_progress=progress, independent_bookstore=session.independent_bookstore, prefer_nearby=session.prefer_nearby)
+            self.library.put_snapshot(session.profile_id,context,result)
+        session.last_cards = result['cards']
+        if not session.parallel_versions: session.parallel_familiar=copy.deepcopy(result)
+        else:
+            for version in session.parallel_versions:
+                if version['intent']==session.confirmed: version['result']=copy.deepcopy(result)
         session.shown.update(card["entity_id"] for card in result["cards"])
         # No raw response or filesystem path is exposed through the browser API.
         return {key: value for key, value in result.items() if key in
-                {"status", "source", "cards", "questions", "error", "trace", "run_id", "created_at", "diagnostics", "taste_inputs", "recommendation_mode"}} | {
+                {"status", "source", "cards", "questions", "error", "trace", "run_id", "created_at", "diagnostics", "taste_inputs", "recommendation_mode", "cache_origin", "cached_at"}} | {
                     "qloo_network_attempts": session.qloo.calls-before,
-                    "filtered_count": len(result["rejections"]), "shown_count": len(session.shown)}
+                    "filtered_count": len(result["rejections"]), "shown_count": len(session.shown),
+                    "feedback_count": len(session.feedback), "prefer_nearby": session.prefer_nearby}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -296,7 +470,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         if cookie:
-            self.send_header("Set-Cookie", "cityplay_session="+cookie+"; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800" + ("; Secure" if self.server.public_origin else ""))
+            self.send_header("Set-Cookie", "cityplay_session="+cookie+"; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000" + ("; Secure" if self.server.public_origin else ""))
         self.end_headers()
         try:
             self.wfile.write(raw)
@@ -361,9 +535,28 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Request must be an object")
             if self.path == "/api/profile/confirm":
                 return self.respond(200, self.server.app.confirm_profile(session, body))
+            if self.path == '/api/taste/prepare':
+                if set(body) != {'city','area','interests','categories'}: raise ValueError('Invalid taste input')
+                return self.respond(200,self.server.app.prepare_taste(session,body))
+            if self.path == '/api/taste/cards/confirm':
+                if set(body)-{'city','area','categories','items','draft_id','exclude_categories'} or not {'city','area','categories','items'}<=set(body): raise ValueError('Invalid card confirmation')
+                return self.respond(200,self.server.app.apply_taste_cards(session,body))
+            if self.path == '/api/library/browse':
+                return self.respond(200,self.server.app.browse_library(session,body))
+            if self.path == '/api/library/choice':
+                return self.respond(200,self.server.app.library_choice(session,body))
+            if self.path == '/api/library/clear':
+                if body:raise ValueError('Invalid reset')
+                self.server.app.library.clear(session.profile_id)
+                return self.respond(200,{'choices':[]})
+            if self.path == '/api/parallel/select':
+                if set(body) != {'draft_id','version'}: raise ValueError('Invalid version selection')
+                return self.respond(200,self.server.app.select_parallel(session,body))
             if self.path == "/api/guess":
                 if set(body) != {"answers"}: raise ValueError("Invalid questionnaire")
                 kind = "guess"
+            elif self.path == '/api/taste/cards':
+                kind='taste_cards'
             elif self.path == "/api/parse":
                 if set(body) != {"query", "city", "area"}:
                     raise ValueError("Invalid parse request")
@@ -371,8 +564,11 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/compare":
                 if set(body) != {"draft_id"}: raise ValueError("Invalid comparison")
                 kind = "compare"
+            elif self.path == '/api/parallel':
+                if set(body)-{'draft_id','alternative'}: raise ValueError('Invalid parallel request')
+                kind='parallel'
             elif self.path == "/api/discover":
-                if set(body) - {"draft_id", "intent", "again", "selections"}:
+                if set(body) - {"draft_id", "intent", "again", "selections", "feedback"}:
                     raise ValueError("Invalid discovery request")
                 if "again" in body and type(body["again"]) is not bool:
                     raise ValueError("again must be boolean")

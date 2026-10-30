@@ -1,0 +1,27 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('web/app.js','utf8'),elements={};let resultMode=true,lastFocus,lastClick,rendered;
+const $=id=>elements[id]??(elements[id]={hidden:false,open:false,focus(){lastFocus=id},click(){lastClick=id},scrollIntoView(){}});
+const ctx={$ ,state:{draft:{city:'new_york',intent:{interests:[]}},confirmedIntent:{max_budget:{amount:20,currency:'USD'},open_now:true}},structuredClone,renderIntent:(value)=>rendered=value,document:{body:{classList:{remove(value){assert.equal(value,'showing-results');resultMode=false;}}}}};
+vm.createContext(ctx);vm.runInContext(fs.readFileSync('web/i18n.js','utf8'),ctx);vm.runInContext(source.slice(source.indexOf('function returnToEditor('),source.indexOf('function message(')),ctx);
+ctx.returnToEditor('venues');assert.equal(resultMode,false);assert.equal($('results').hidden,true);assert.equal($('library-options').open,true);assert.equal(lastClick,'venue-custom');
+ctx.returnToEditor('range');assert.equal(lastFocus,'library-radius');assert.equal($('library-options').open,true);
+ctx.editRequest();assert.equal($('manual-entry').open,true);assert.equal(rendered.intent.max_budget.amount,20);assert.equal(rendered.intent.open_now,true);assert.equal(lastFocus,'discover-button');
+const intent={city:'new_york',max_budget:{amount:20,currency:'USD'},open_now:true,available_minutes:60,exclude_categories:['hotel'],strict_city:true,novelty_requested:true};
+const failures=ctx.operationalFailures({diagnostics:{rejection_counts:{budget_unverified:6,open_now_unverified:6,missing_address:1}}});
+const revised=ctx.exploratoryIntent(intent,failures);assert.equal(revised.max_budget,null);assert.equal(revised.open_now,false);assert.equal(revised.available_minutes,60);assert.equal(revised.strict_city,true);assert.equal(revised.novelty_requested,true);assert.equal(revised.exclude_categories[0],'hotel');assert.equal(intent.max_budget.amount,20);
+assert.equal(ctx.operationalFailures({}).length,0);
+const library=fs.readFileSync('web/library.js','utf8');vm.runInContext(library.slice(library.indexOf('function culturalMatch('),library.indexOf('function restoreCulturalFocus(')),ctx);
+assert.equal(ctx.culturalMatch({name:'迈克尔 杰克逊'},'迈克尔杰克逊'),true);
+assert.equal(ctx.culturalMatch({name:'Michael Jackson',aliases:[{value:'迈克尔 杰克逊'}]},'迈克尔杰克逊'),true);
+assert.equal(ctx.culturalMatch({name:'周杰伦'},'迈克尔杰克逊'),false);
+assert.equal(ctx.culturalMatch({name:'Daft Punk Unchained'},'Daft Punk'),false);
+const ranked=ctx.rankCulturalResults([{name:'Other'},{name:'Daft Punk'},{name:'Other two'}],'Daft Punk');assert.equal(ranked.length,3);assert.equal(ranked[0].name,'Daft Punk');
+vm.runInContext(library.slice(library.indexOf('function restoreCulturalFocus('),library.indexOf('(() =>')),ctx);
+let focusRestored=false;ctx.restoreCulturalFocus({querySelectorAll:()=>[{dataset:{focusKey:'known:like'},focus(){focusRestored=true;}}]},'known:like');assert.equal(focusRestored,true);
+console.log('Usability repairs: visible recovery, preserved requirements, explicit relaxation, exact verified names/aliases and stable ranking passed');
+// Version evidence is visible on the version card, not only in a collapsed trace.
+const makeNode=(tag='',className='',text='')=>({tag,className,text,children:[],append(...x){this.children.push(...x)},replaceChildren(...x){this.children=x},setAttribute(){},addEventListener(){}});
+const panels={};const versionContext={node:makeNode,$:id=>panels[id]??(panels[id]=makeNode()),activateParallel(){},state:{parallel:{active:'adjacent',versions:[{id:'familiar',title:'Familiar',result:{cards:[],taste_inputs:[{name:'Seed'}]}},{id:'adjacent',title:'Adjacent',path:[{from:['Seed'],to:'Bridge'}],result:{cards:[{entity_id:'synthetic-place',name:'Actual candidate',category:'gallery'}]}}]}}};
+vm.createContext(versionContext);vm.runInContext(fs.readFileSync('web/i18n.js','utf8'),versionContext);vm.runInContext(source.slice(source.indexOf('function renderParallel('),source.indexOf('async function activateParallel(')),versionContext);versionContext.renderParallel();
+assert.ok(JSON.stringify(panels['parallel-versions']).includes('Seed → Bridge'));assert.ok(JSON.stringify(panels['parallel-versions']).includes(versionContext.categoryLabel('gallery')));
+console.log('Version cards: actual bridge and venue combination visible');

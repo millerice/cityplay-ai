@@ -4,6 +4,7 @@ from collections import Counter
 import math
 import re
 import uuid
+import unicodedata
 from datetime import datetime, timezone
 from .intent import Intent, Area
 from .transport import ServiceError
@@ -15,12 +16,22 @@ PUBLIC_CATEGORIES = {
     "live_music": {"live music venue", "jazz club"},
     "park": {"park", "city park"},
     "museum": {"museum", "art museum", "history museum", "modern art museum"},
+    'restaurant': set(['chinese restaurant', 'italian restaurant', 'pizza restaurant', 'restaurant', 'western restaurant']),
+    'bakery': set(['bakery', 'cupcake shop']),
+    'gallery': set(['art gallery']),
+    'cinema': set(['movie theater']),
+    'theater': set(['performing arts theater']),
+    'record_store': set(['cd store', 'record store']),
+    'clothing': set(['clothing store']),
+    'garden': set(['botanical garden', 'community garden', 'garden']),
+
 }
 EXCLUDED_GENRES = {"hotel": {"hotel"}, "mall": {"shopping mall", "mall"},
                    "recording_studio": {"recording studio"}, "tourist_attraction": {"tourist attraction"}}
 # Reviewed name/type selections from PoC, NOT hardcoded Qloo IDs.
 FILTER_LOOKUPS = {"bookstore": ("bookstore", "Book store", "urn:tag:category:place"),
                   "coffee": ("coffee", "Coffee", "urn:tag:cuisine:qloo")}
+FILTER_LOOKUPS.update({'restaurant': ('restaurant', 'Restaurant', 'urn:tag:genre:place'), 'bakery': ('bakery', 'Bakery', 'urn:tag:cuisine:qloo'), 'gallery': ('art gallery', 'Art gallery', 'urn:tag:category:place'), 'cinema': ('movie theater', 'Movie theater', 'urn:tag:category:place'), 'theater': ('performing arts theater', 'Performing arts theater', 'urn:tag:category:place'), 'record_store': ('record store', 'Record store', 'urn:tag:category:place'), 'clothing': ('clothing store', 'Clothing store', 'urn:tag:category:place'), 'garden': ('garden', 'Garden', 'urn:tag:category:place')})
 TAG_LOOKUPS = {"bookstore": ("Book store", "urn:tag:category:place"),"jazz": ("Jazz", "urn:tag:genre:music"),
                "science fiction": ("Science Fiction", "urn:tag:genre:qloo"),
                "coffee": ("Coffee", "urn:tag:cuisine:qloo"),
@@ -34,6 +45,23 @@ def result_array(data, kind):
     if not isinstance(results, dict) or not isinstance(results.get(kind), list):
         raise ServiceError("QLOO_RESPONSE_SHAPE")
     return [x for x in results[kind] if isinstance(x, dict)]
+
+
+def recommendation_evidence(entity, inputs):
+    query = entity.get('query')
+    explanation = query.get('explainability') if isinstance(query, dict) else None
+    rows = explanation.get('signal.interests.entities') if isinstance(explanation, dict) else None
+    known = {x['id']: x for x in inputs}
+    contributors = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict): continue
+        if not isinstance(row.get('entity_id'), str): continue
+        source = known.get(row.get('entity_id'))
+        score = row.get('score')
+        if source and type(score) in {int, float} and math.isfinite(score) and 0 <= score <= 1:
+            contributors.append({'name': source['name'], 'score': score})
+    return {'status': 'available' if contributors else 'unavailable',
+            'contributors': sorted(contributors, key=lambda x: -x['score'])}
 
 
 def distance_m(area, location):
@@ -58,6 +86,10 @@ def candidate_type(entity):
     return None
 
 
+def identity_name(value):
+    return re.sub(r'''[\s·•・《》「」“”"'’]''', '', unicodedata.normalize('NFKC', value).casefold())
+
+
 class ResolutionNeeded(Exception):
     def __init__(self, field, query, candidates):
         self.question = {"field": field, "query": query, "reason": "ambiguous_or_not_found",
@@ -72,7 +104,7 @@ class DiscoveryEngine:
         self.qloo = qloo
         self.verifier = verifier or WebsiteVerifier()
 
-    def run(self, intent: Intent, area: Area | None, *, seen_ids=None, selections=None, on_progress=None, independent_bookstore=False, allow_no_signals=False):
+    def run(self, intent: Intent, area: Area | None, *, seen_ids=None, selections=None, on_progress=None, independent_bookstore=False, allow_no_signals=False, prefer_nearby=False):
         if seen_ids is not None and (not isinstance(seen_ids, list) or len(seen_ids) > 100 or any(not isinstance(x, str) for x in seen_ids)):
             raise ValueError("Invalid seen_ids")
         if selections is not None and not isinstance(selections, dict):
@@ -125,7 +157,8 @@ class DiscoveryEngine:
             if choice:
                 selected = [x for x in valid if (x.get("entity_id") or x.get("id")) == choice]
             else:
-                selected = [x for x in valid if normalized(x["name"]) == normalized(expected_name or query)]
+                compare = identity_name if field.startswith('interests.') else normalized
+                selected = [x for x in valid if compare(x["name"]) == compare(expected_name or query)]
             if expected_type:
                 selected = [x for x in selected if candidate_type(x) == expected_type]
             if len(selected) != 1:
@@ -155,8 +188,9 @@ class DiscoveryEngine:
                     tags.append(lookup_tag(interest.query, field, name, kind))
             groups = []
             for category in intent.categories or [None]:
-                params = {"filter.type": "urn:entity:place", "take": 5,
-                          "filter.location": f"POINT({area.lon} {area.lat})", "filter.location.radius": area.radius_m}
+                params = {"filter.type": "urn:entity:place", "take": 10 if intent.categories else 30,
+                          "filter.location": f"POINT({area.lon} {area.lat})", "filter.location.radius": area.radius_m,
+                          "feature.explainability": True}
                 if entities:
                     params["signal.interests.entities"] = ",".join(entities)
                 if tags:
@@ -211,9 +245,16 @@ class DiscoveryEngine:
                     rejected.append({"entity_id": identifier, "reason": reason})
                     continue
                 duplicate_ids.add(identifier)
-                pool.append({"entity": entity, "rank": rank, "category": category or genre, "distance": distance})
+                pool.append({"entity": entity, "rank": rank, "category": category or next(k for k,genres in PUBLIC_CATEGORIES.items() if genre in genres), "distance": distance})
         # Inspect only the best 6 eligible candidates; do not crawl all returned websites.
-        pool.sort(key=lambda x: x["rank"])
+        pool.sort(key=lambda x: (x["distance"], x["rank"]) if prefer_nearby else (x["rank"],))
+        # Give each eligible category a chance before spending the six website checks.
+        if len(intent.categories) != 1 and not prefer_nearby:
+            first,rest,represented=[],[],set()
+            for entry in pool:
+                if entry['category'] in represented:rest.append(entry)
+                else:first.append(entry);represented.add(entry['category'])
+            pool=first+rest
         checked = []
         for entry in pool[:6]:
             evidence = self.verifier.check(entry["entity"])
@@ -232,7 +273,13 @@ class DiscoveryEngine:
         transition("CANDIDATES_CHECKED", checked=min(len(pool), 6), eligible=len(checked),
                    operational_verification="incomplete; no live hours, costs, events or access proof")
         # Interleave per-query ranks; do not compare affinity numbers across distinct queries.
-        checked.sort(key=lambda x: (x["rank"], x["evidence"].identity != "website_name_corroborated"))
+        checked.sort(key=lambda x: (x["distance"], x["rank"]) if prefer_nearby else (x["rank"], x["evidence"].identity != "website_name_corroborated"))
+        if len(intent.categories) != 1 and not prefer_nearby:
+            first,rest,represented=[],[],set()
+            for entry in checked:
+                if entry['category'] in represented:rest.append(entry)
+                else:first.append(entry);represented.add(entry['category'])
+            checked=first+rest
         selected, deferred, counts = [], [], {}
         for entry in checked:
             label = entry["category"]
@@ -244,17 +291,21 @@ class DiscoveryEngine:
         # Explicit single-category request permits more than two of that category.
         if len(intent.categories) == 1:
             selected.extend(deferred)
-        transition("RANKED", returned=min(3, len(selected)), strategy="query_rank_then_website_evidence_with_category_diversity")
+        transition("RANKED", returned=min(3, len(selected)), strategy="distance_within_qloo_candidates" if prefer_nearby else "query_rank_then_website_evidence_with_category_diversity")
         cards = []
         for entry in selected[:3]:
             entity, evidence = entry["entity"], entry["evidence"]
             affinity = (entity.get("query") or {}).get("affinity") if isinstance(entity.get("query"), dict) else None
             if type(affinity) not in {float, int} or not math.isfinite(affinity):
                 affinity = None
+            description=next((entity['properties'][key].strip()[:800] for key in ('short_description','description')
+                              if isinstance(entity['properties'].get(key),str) and entity['properties'][key].strip()),None)
             cards.append({"entity_id": entity["entity_id"], "name": entity["name"],
                           "category": entry["category"], "address": entity["properties"]["address"],
+                          "description": description,
                           "location": entity["location"], "straight_line_distance_m": entry["distance"],
                           "affinity": affinity, "query_rank": entry["rank"] + 1,
+                          "explanation": recommendation_evidence(entity, resolved_inputs),
                           "taste_inputs": resolved_inputs, "recommendation_mode": "category_baseline" if allow_no_signals else "cultural_taste",
                           "why": "Returned by Qloo Insights using the confirmed cultural interests; category and coordinate radius passed local checks.",
                           "novelty": "not_in_provided_seen_list" if seen_ids else "unknown_without_visit_history",

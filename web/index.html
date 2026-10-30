@@ -1,103 +1,108 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="CityPlay AI，用真实文化兴趣关联，探索城市的另一面。">
+  <meta name="description" content="CityPlay AI: turn cultural taste into real city discoveries, powered by Qloo.">
   <title>CityPlay AI — Discover Fun Beyond the Ordinary</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/vendor/leaflet.css">
   <link rel="stylesheet" href="/styles.css">
   <script src="/vendor/leaflet.js" defer></script>
+  <script src="/i18n.js" defer></script>
   <script src="/map.js" defer></script>
   <script src="/app.js" defer></script>
   <script src="/guess.js" defer></script>
+  <script src="/library.js" defer></script>
 </head>
 <body>
-<a class="skip-link" href="#discovery">跳到探索表单</a>
+<a class="skip-link" href="#discovery" data-i18n="skip.link">Skip to exploration form</a>
 <div class="page-shell">
   <header class="topbar">
-    <a class="brand" href="/" aria-label="CityPlay AI 首页"><img src="/favicon.svg" alt="" width="34" height="34"><span>CityPlay<span class="brand-ai">AI</span></span></a>
-    <div class="topbar-right"><span class="availability" id="service-status"><i></i> 正在检查服务</span><span class="preview-badge">本地预览</span></div>
+    <a class="brand" href="/" aria-label="CityPlay AI home" data-i18n-aria="brand.aria"><img src="/favicon.svg" alt="" width="34" height="34"><span>CityPlay<span class="brand-ai">AI</span></span></a>
+    <div class="topbar-right"><span class="availability" id="service-status"><i></i> <span id="service-status-text" data-i18n="topbar.checking">Checking service</span></span><button id="lang-toggle" class="lang-toggle" type="button" aria-label="Switch to Chinese">中文</button><span class="preview-badge" data-i18n="topbar.preview">Local preview</span></div>
   </header>
 
   <main>
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow"><span class="tiny-star">✳</span> DISCOVER FUN BEYOND THE ORDINARY</p>
-        <h1 id="hero-title">从你的口味，<br>发现<span class="accent-word">另一座城市<span class="underline-stroke"></span></span>。</h1>
-        <p class="hero-description">喜欢的音乐人、电影或书籍，藏着你的文化口味。<br>让 Qloo 的跨领域关联带你发现真实地点。</p>
-        <div class="hero-proof"><span class="proof-dot"></span> 真实 Qloo 兴趣关联 <span class="proof-separator">/</span> 每个建议都有来源</div>
+        <p class="eyebrow" data-i18n="hero.eyebrow">CITYPLAY · PARALLEL LIVES</p>
+        <h1 id="hero-title"><span data-i18n="hero.title1">From your taste,</span><br><span data-i18n="hero.title2">meet your</span> <span class="accent-word"><span data-i18n="hero.title3">parallel lives</span><span class="underline-stroke"></span></span>.</h1>
+        <p class="hero-description" data-i18n="hero.description">Share your cultural taste, choose a life to try, and discover places worth the trip.</p>
+        <div class="hero-proof"><span class="proof-dot"></span> <span data-i18n="hero.proofA">Real Qloo taste associations</span> <span class="proof-separator">/</span> <span data-i18n="hero.proofB">Every suggestion shows its source</span></div>
       </div>
-      <div class="taste-art" aria-hidden="true">
-        <div class="art-grid"></div><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
-        <div class="art-cross cross-one">+</div><div class="art-cross cross-two">+</div>
-        <div class="art-label label-one"><span>♫</span> JAZZ</div>
-        <div class="art-label label-two"><span>▤</span> BOOKSHOPS</div>
-        <div class="art-label label-three"><span>◉</span> COFFEE</div>
-        <div class="art-center"><svg viewBox="0 0 60 60"><path d="M30 7 42 29 30 53 18 29Z" fill="currentColor"/><path d="m30 7 12 22H30Z" fill="#f6f3e9"/></svg></div>
-        <div class="art-caption"><span>YOUR TASTE</span><span class="art-arrow">→</span><span>YOUR CITY</span></div>
-      </div>
+
     </section>
 
     <section class="workspace" id="discovery" aria-labelledby="discovery-title">
-      <div class="section-heading"><div><p class="eyebrow">01 / YOUR NEXT DISCOVERY</p><h2 id="discovery-title">你的文化口味，会带你去哪里？</h2></div><p class="section-aside">少一点攻略，多一点探索。</p></div>
+      <div class="section-heading"><div><p class="eyebrow">01 / YOUR NEXT DISCOVERY</p><h2 id="discovery-title" data-i18n="workspace.title">Start from what you love</h2></div><p class="section-aside" data-i18n="workspace.aside">Less itinerary, more exploration.</p></div>
+      <section id="library-panel" class="query-panel"><div class="section-heading"><div><h2 data-i18n="library.title">Browse first, find what you love</h2><p class="field-help" data-i18n="library.help">Pick a few that speak to you — liked or curious. One is enough to start.</p></div></div><div class="library-startbar"><label data-i18n="library.city">City<select id="library-city"><option value="new_york" data-i18n="city.option.new_york">New York area</option><option value="shanghai" data-i18n="city.option.shanghai">Shanghai (experimental)</option></select></label><p id="library-center" class="field-help">Downtown New York sample center · distances measured from here</p></div><div id="library-domains" class="input-modes"><button type="button" data-domain="all" aria-pressed="true" data-i18n="domain.all">All</button><button type="button" data-domain="music" aria-pressed="false" data-i18n="domain.music">Music</button><button type="button" data-domain="movie" aria-pressed="false" data-i18n="domain.movie">Movies</button><button type="button" data-domain="book" aria-pressed="false" data-i18n="domain.book">Books</button></div><form id="library-search" class="culture-search"><input id="library-query" maxlength="100" aria-label="Search cultural objects" data-i18n-aria="library.searchAria" placeholder="Search artists, movies or books" data-i18n-placeholder="library.searchPlaceholder"><button type="submit" class="secondary-button" data-i18n="library.search">Search</button></form><div class="guess-entry"><button type="button" id="guess-open" class="text-button" data-i18n="library.guess">✨ Guess my taste: pick cards for inspiration</button></div><div class="query-bottom"><button id="library-clear" type="button" class="text-button" hidden data-i18n="library.clear">Clear my choices</button><button id="library-go" type="button" class="primary-button" disabled data-i18n="library.go">Start exploring from this taste ↗</button></div><div id="library-selected" class="chosen-tastes"></div><div id="library-cards" class="culture-grid"></div><div class="library-tools"><button id="library-next" type="button" class="text-button">Another set</button><button id="library-refresh" type="button" class="text-button" data-i18n="library.discoverMore">Discover more</button></div><p id="library-status" class="field-help" role="status"></p><details id="library-options"><summary data-i18n="library.optionsSummary">Adjust venues, range and exclusions</summary><div class="library-plan"><label data-i18n="library.range">Nearby range<select id="library-radius"><option value="5000">5 km</option><option value="10000" selected>10 km</option><option value="20000">20 km</option></select></label></div><fieldset id="venue-discovery" class="venue-discovery"><legend data-i18n="venue.legend">What should this exploration look for?</legend><div class="input-modes"><button id="venue-auto" type="button" aria-pressed="true" data-i18n="venue.auto">Mix for me</button><button id="venue-custom" type="button" aria-pressed="false" data-i18n="venue.custom">I have a direction</button></div><p id="venue-help" class="field-help" role="status" data-i18n="venue.helpAuto">Finds candidates across venue types based on your cultural taste.</p><div id="venue-choices" class="check-chips" hidden></div></fieldset><details class="library-exclusions"><summary data-i18n="exclusion.summary">What to avoid this time?</summary><label for="exclusion-query" data-i18n="exclusion.label">Other venue types to avoid</label><div class="culture-search"><input id="exclusion-query" maxlength="160" placeholder="e.g. no cafés or museums" data-i18n-placeholder="exclusion.placeholder" aria-describedby="exclusion-help exclusion-status"><button id="exclusion-add" type="button" class="secondary-button" data-i18n="exclusion.add">Add</button></div><p id="exclusion-help" class="field-help" data-i18n="exclusion.help">Venue categories only, separated by commas. Crowds, noise or queues cannot be verified yet.</p><div id="exclusion-tags" class="check-chips"></div><p id="exclusion-status" class="field-help" role="status"></p><div class="check-chips"><label><input type="checkbox" value="hotel"><span data-i18n="xcat.hotel">Hotels</span></label><label><input type="checkbox" value="mall"><span data-i18n="xcat.mall">Malls</span></label><label><input type="checkbox" value="recording_studio"><span data-i18n="xcat.recording_studio">Recording studios</span></label><label><input type="checkbox" value="tourist_attraction"><span data-i18n="xcat.tourist_attraction">Tourist attractions</span></label></div></details></details></section>
+      <details id="manual-entry"><summary data-i18n="manual.summary">Prefer typing names or a description?</summary>
       <form id="query-form" class="query-panel">
         <fieldset id="query-fields">
           <div class="location-row">
-            <div class="city-switch" aria-label="选择探索城市">
-              <button type="button" class="city-button selected" data-city="new_york" aria-pressed="true">纽约周边 <span>主体验</span></button>
-              <button type="button" class="city-button" data-city="shanghai" aria-pressed="false">上海 <span>实验支持</span></button>
+            <div class="city-switch" aria-label="Select exploration city">
+              <button type="button" class="city-button selected" data-city="new_york" aria-pressed="true"><span data-i18n="city.new_york">New York area</span> <span data-i18n="city.new_york.note">primary</span></button>
+              <button type="button" class="city-button" data-city="shanghai" aria-pressed="false"><span data-i18n="city.shanghai">Shanghai</span> <span data-i18n="city.shanghai.note">experimental</span></button>
             </div>
-            <label class="radius-control">探索半径<select id="radius" aria-label="探索半径"><option value="5000">5 km</option><option value="10000" selected>10 km</option><option value="20000">20 km</option></select></label>
           </div>
-          <label class="input-heading" for="query">说说喜欢的音乐人、电影或书籍，以及想探索的场所</label>
-          <textarea id="query" maxlength="1800" rows="3" placeholder="比如：喜欢 Miles Davis，想看看附近书店。或喜欢电影《Blade Runner》，想找咖啡场所。" required></textarea>
-          <div class="guess-entry"><button type="button" id="guess-open" class="secondary-button">✨ 猜你爱好</button><span>不知道喜欢什么？轻松选几张卡片 · 约 1～2 分钟 · 随时跳过</span></div>
-          <div class="suggestions" aria-label="灵感示例，不限于这些组合"><span>灵感示例</span><button type="button" data-example="books">Miles Davis × 书店 <span>↗</span></button><button type="button" data-example="coffee">爵士 × 咖啡 <span>↗</span></button><button type="button" data-example="movie">Blade Runner × 咖啡 <span>↗</span></button></div>
-          <p class="field-help">这些只是灵感示例，不限于这三组。自由填写即可；系统会根据实际数据匹配，并说明尚未接入的方向。</p>
-          <div class="query-bottom"><div class="area-hint"><span class="location-mark">⌖</span><div><span id="area-label">纽约下城示例中心</span><small>附近范围，非城市行政边界</small></div><details class="center-settings"><summary>调整中心</summary><div class="coordinate-inputs"><label>纬度<input id="latitude" type="number" step="any" min="-90" max="90" required value="40.722668"></label><label>经度<input id="longitude" type="number" step="any" min="-180" max="180" required value="-73.99823"></label></div></details></div><button class="primary-button" id="parse-button" type="submit">理解我的需求 <span>↗</span></button></div>
-          <p class="privacy-note">仅发送兴趣与所选区域；请勿输入姓名、联系方式等个人信息。</p>
+          <div class="input-modes" role="group" aria-label="Select input mode"><button type="button" data-mode="structured" aria-pressed="true" data-i18n="mode.structured">Enter cultural starting points</button><button type="button" data-mode="natural" aria-pressed="false" data-i18n="mode.natural">Describe in one sentence</button></div>
+
+          <section id="structured-input" class="taste-start"><p class="field-help" data-i18n="seed.help">Enter 1–3 names; specific ones find stronger associations.</p><div class="taste-seeds"><label data-i18n="seed.artist">Artist<input id="seed-artist" maxlength="100" placeholder="Miles Davis"></label><label data-i18n="seed.movie">Movie<input id="seed-movie" maxlength="100" placeholder="Blade Runner"></label><label data-i18n="seed.book">Book<input id="seed-book" maxlength="100" placeholder="A book you like (optional)" data-i18n-placeholder="seed.bookPlaceholder"></label></div><label data-i18n="seed.category">What should this exploration look for?<select id="seed-category"><option value="" data-i18n="seed.mix">Mix for me</option><option value="bookstore" data-i18n="cat.bookstore">Bookstore</option><option value="coffee" data-i18n="cat.coffee">Coffee</option><option value="museum" data-i18n="cat.museum">Museum</option><option value="live_music" data-i18n="cat.live_music">Live music</option><option value="park" data-i18n="cat.park">Park</option><option value="restaurant" data-i18n="cat.restaurant">Restaurant</option><option value="bakery" data-i18n="cat.bakery">Bakery</option><option value="gallery" data-i18n="cat.gallery">Gallery</option><option value="cinema" data-i18n="cat.cinema">Cinema</option><option value="theater" data-i18n="cat.theater">Theater</option><option value="record_store" data-i18n="cat.record_store">Record store</option><option value="clothing" data-i18n="cat.clothing">Clothing</option><option value="garden" data-i18n="cat.garden">Garden</option></select></label></section>
+          <div id="natural-input" hidden><label class="input-heading" for="query" data-i18n="natural.label">Your taste and exploration conditions</label>
+          <textarea id="query" maxlength="1800" rows="3" placeholder="e.g. I like Miles Davis — where should I look for bookshops?" data-i18n-placeholder="natural.placeholder"></textarea>
+
+          <div class="suggestions" aria-label="Try starting from these"><span data-i18n="suggest.label">Try starting from these</span><button type="button" data-example="coffee" data-i18n="suggest.coffee">Like jazz — where for coffee? <span>↗</span></button><button type="button" data-example="movie" data-i18n="suggest.movie">Sci-fi films — which cafés? <span>↗</span></button><button type="button" data-example="books" data-i18n="suggest.books">Miles Davis — which bookstores? <span>↗</span></button></div>
+          <p class="field-help" data-i18n="suggest.help">These are only starting points — swap in your own favorites. The sci-fi example starts from Blade Runner; results depend on actual matches.</p>
+          </div>
+          <details class="explore-settings"><summary data-i18n="settings.summary">Exploration settings · range and center</summary><label class="radius-control" data-i18n="settings.radius">Exploration radius<select id="radius" aria-label="Exploration radius" data-i18n-aria="settings.radius"><option value="5000">5 km</option><option value="10000" selected>10 km</option><option value="20000">20 km</option></select></label><div class="area-hint"><span class="location-mark">⌖</span><div><span id="area-label">Downtown New York sample center</span><small data-i18n="settings.areaNote">Nearby range, not an administrative city boundary</small></div><details class="center-settings"><summary data-i18n="settings.adjustCenter">Adjust center</summary><div class="coordinate-inputs"><label data-i18n="settings.lat">Latitude<input id="latitude" type="number" step="any" min="-90" max="90" required value="40.722668"></label><label data-i18n="settings.lon">Longitude<input id="longitude" type="number" step="any" min="-180" max="180" required value="-73.99823"></label></div></details></div></details>
+          <div class="query-bottom"><button class="primary-button" id="parse-button" type="submit" data-i18n="form.submit">See my parallel lives ↗</button></div>
+          <p class="privacy-note" data-i18n="form.privacy">Only interests and the chosen area are sent; please don't enter names or contact details.</p>
         </fieldset>
       </form>
+      </details>
 
       <div class="notice" id="notice" role="alert" hidden></div>
       <section class="progress-panel" id="progress-panel" role="status" aria-live="polite" hidden>
-        <div class="progress-title"><span class="loading-orbit"></span><div><strong id="progress-title">正在理解你的需求</strong><p id="progress-description">从你的描述中整理兴趣与条件。</p></div></div>
-        <ol class="progress-steps" id="progress-steps"><li>理解兴趣</li><li>探索真实关联</li><li>检查地点与来源</li><li>整理少量建议</li></ol>
+        <div class="progress-title"><span class="loading-orbit"></span><div><strong id="progress-title">Understanding your request</strong><p id="progress-description">Organizing cultural interests, target venues and required conditions.</p></div></div>
+        <ol class="progress-steps" id="progress-steps"><li data-i18n="progress.step1">Understand interests</li><li data-i18n="progress.step2">Explore real associations</li><li data-i18n="progress.step3">Check places and sources</li><li data-i18n="progress.step4">Shape a few suggestions</li></ol>
       </section>
 
       <section class="confirmation" id="confirmation" aria-labelledby="confirmation-title" hidden>
-        <div class="section-heading"><div><p class="eyebrow">02 / MAKE IT YOURS</p><h2 id="confirmation-title">先确认，我理解得对吗？</h2></div><span class="quiet-badge">你决定探索的方向</span></div>
+        <div class="section-heading"><div><p class="eyebrow">02 / MAKE IT YOURS</p><h2 id="confirmation-title" data-i18n="confirm.title">Quick check — did I understand you?</h2></div><span class="quiet-badge" data-i18n="confirm.badge">You steer the direction</span></div>
         <form id="confirm-form"><fieldset id="confirm-fields">
           <p id="intent-summary" class="intent-summary"></p>
           <p id="default-plan" class="constraint-note" hidden></p>
           <div class="clarifications" id="clarifications" hidden></div>
-          <details id="intent-details" class="intent-details"><summary>修改兴趣和详细条件 <span>＋</span></summary>
-          <div class="confirmation-grid"><div class="interest-column"><h3>你的文化兴趣</h3><div id="interest-fields"></div><button type="button" class="text-button" id="add-interest">＋ 添加一个兴趣</button><p class="field-help">人物或作品可选择类型；概念可用 Jazz、Coffee 等关键词。</p></div><div class="category-column"><h3>想探索的场所</h3><div id="category-fields" class="check-chips"></div><h3 class="exclusion-heading">这次避开</h3><div id="exclude-fields" class="check-chips"></div></div></div>
-          <div class="constraint-fields"><label>可用时间（分钟）<input id="minutes" type="number" min="1" max="1440" placeholder="不限制"></label><label>最高预算<div class="budget-input"><input id="budget" type="number" min="0" step="0.01" placeholder="不限制"><select id="currency" aria-label="预算币种"><option value="USD">USD</option><option value="CNY">CNY</option></select></div></label><div class="constraint-toggles"><label><input id="open-now" type="checkbox"> 必须现在营业</label><label><input id="novelty" type="checkbox"> 必须从未去过</label><label><input id="strict-city" type="checkbox"> 必须在市界内</label></div></div>
-          <p class="constraint-note">这些条件会被严格保留。营业、费用或行程时间缺少证据时，我们会先说明数据不足。</p>
+          <details id="intent-details" class="intent-details"><summary><span data-i18n="confirm.edit">Edit interests and detailed conditions</span> <span>＋</span></summary>
+          <div class="confirmation-grid"><div class="interest-column"><h3 data-i18n="confirm.interests">Your cultural interests</h3><div id="interest-fields"></div><button type="button" class="text-button" id="add-interest" data-i18n="confirm.addInterest">+ Add an interest</button><p class="field-help" data-i18n="confirm.interestsHelp">People and works can carry a type; concepts use keywords like Jazz or Coffee.</p></div><div class="category-column"><h3 data-i18n="confirm.venues">Venues to explore</h3><div id="category-fields" class="check-chips"></div><h3 class="exclusion-heading" data-i18n="confirm.avoid">Avoid this time</h3><div id="exclude-fields" class="check-chips"></div></div></div>
+          <div class="constraint-fields"><label data-i18n="confirm.minutes">Time available (min)<input id="minutes" type="number" min="1" max="1440" placeholder="No limit" data-i18n-placeholder="confirm.noLimit"></label><label data-i18n="confirm.budget">Max budget<div class="budget-input"><input id="budget" type="number" min="0" step="0.01" placeholder="No limit" data-i18n-placeholder="confirm.noLimit"><select id="currency" aria-label="Budget currency"><option value="USD">USD</option><option value="CNY">CNY</option></select></div></label><div class="constraint-toggles"><label><input id="open-now" type="checkbox"> <span data-i18n="confirm.openNow">Must be open now</span></label><label><input id="novelty" type="checkbox"> <span data-i18n="confirm.novelty">Must be somewhere new to me</span></label><label><input id="strict-city" type="checkbox"> <span data-i18n="confirm.strictCity">Must be inside city limits</span></label></div></div>
+          <p class="constraint-note" data-i18n="confirm.note">These constraints are kept strictly. When hours, cost or travel time lack evidence, we say so instead of guessing.</p>
           </details>
-          <div class="confirmation-bottom"><p id="confirmed-area"></p><button class="primary-button" id="discover-button" type="submit">确认，开始探索 <span>↗</span></button></div>
+          <div class="confirmation-bottom"><p id="confirmed-area"></p><button class="primary-button" id="discover-button" type="submit" data-i18n="confirm.submit">Confirm — unlock parallel lives ↗</button></div>
         </fieldset></form>
       </section>
 
       <section class="results" id="results" aria-labelledby="results-title" hidden>
-        <div class="section-heading"><div><p class="eyebrow">03 / FOLLOW YOUR CURIOSITY</p><h2 id="results-title">这几个方向，值得了解。</h2><p class="results-subtitle" id="results-subtitle"></p></div><button class="secondary-button" id="again-button" type="button">换一批 <span>↻</span></button></div>
+        <section id="parallel-panel" class="parallel-panel" hidden aria-label="Parallel lives versions"><p class="eyebrow" data-i18n="parallel.eyebrow">YOUR PARALLEL LIVES</p><h2 data-i18n="parallel.title">Which life will you walk into today?</h2><p data-i18n="parallel.help">Same city, different tastes. Preview the places first, then choose a version to try.</p><div id="parallel-versions" class="parallel-versions"></div><details class="path-details"><summary data-i18n="parallel.why">Why these recommendations?</summary><div id="parallel-path" class="agent-evidence"></div></details><details><summary data-i18n="parallel.altSummary">Alternative me: give a new starting point to try</summary><p class="field-help" data-i18n="parallel.altHelp">Pick a cultural object you're open to; you don't have to be a fan yet.</p><label data-i18n="parallel.altType">Type<select id="alternative-type"><option value="artist" data-i18n="type.artist">Artist</option><option value="movie" data-i18n="type.movie">Movie</option><option value="book" data-i18n="type.book">Book</option></select></label><label>Name<input id="alternative-query" maxlength="100" placeholder="e.g. Björk" data-i18n-placeholder="parallel.altPlaceholder"></label><button type="button" id="parallel-build" class="secondary-button" data-i18n="parallel.altBuild">Find this version ↗</button></details><p id="parallel-status" role="status"></p></section>
+        <div class="section-heading"><div><p class="eyebrow">03 / FOLLOW YOUR CURIOSITY</p><h2 id="results-title" data-i18n="results.title">These directions are worth knowing.</h2><p class="results-subtitle" id="results-subtitle"></p></div><button type="button" id="edit-exploration" class="text-button" data-i18n="results.edit">Edit taste</button><button class="secondary-button" id="again-button" type="button" data-i18n="results.again">Another batch ↻</button></div>
         <div id="result-message" class="result-message" hidden></div>
         <div id="choices" class="choices" hidden></div>
-        <section id="map-panel" hidden aria-label="推荐地点地图"><p class="map-caption">Qloo 原始经纬度 · 坐标基准待核验 · 点击编号查看对应地点</p><div id="recommendation-map"></div><p id="map-status" class="field-help" role="status"></p></section>
+        <div class="result-view-controls" role="group" aria-label="Result view"><button type="button" data-view="list" aria-pressed="true" data-i18n="results.viewList">Places</button><button type="button" data-view="map" aria-pressed="false" data-i18n="results.viewMap">Map</button></div>
+        <div id="result-layout" class="result-layout" data-view="list"><div id="cards" class="cards"></div><section id="map-panel" hidden aria-label="Recommended places map"><p class="map-caption" data-i18n="map.caption">Place map · tap a number to view</p><div id="recommendation-map"></div><p id="map-status" class="field-help" role="status"></p></section></div>
+        <details class="secondary-info"><summary data-i18n="secondary.summary">Sources and comparison evidence</summary>
         <div id="agent-evidence" class="agent-evidence" hidden></div>
-        <div id="cards" class="cards"></div>
-        <section id="comparison-panel" class="comparison-panel" hidden><h3>文化口味，改变了什么？</h3><p>保持类别、范围和条件相同，比较不添加文化兴趣信号的 Qloo 候选。它仍使用 Qloo，不是 LLM-only 对照。</p><button id="compare-button" type="button" class="secondary-button">查看同类别基线 ↗</button><div id="comparison-result" aria-live="polite"></div></section>
-        <details class="decision-details" id="decision-details" hidden><summary>这些建议是怎么来的？<span>＋</span></summary><div id="decision-content"></div></details>
+        <div id="taste-directions" class="agent-evidence" hidden></div>
+        <section id="comparison-panel" class="comparison-panel" hidden><h3 data-i18n="compare.title">What did cultural taste change?</h3><p data-i18n="compare.help">Same categories, range and constraints, minus the cultural taste signals. Still Qloo-powered — not an LLM-only comparison.</p><button id="compare-button" type="button" class="secondary-button" data-i18n="compare.button">See same-category baseline ↗</button><div id="comparison-result" aria-live="polite"></div></section>
+        <details class="decision-details" id="decision-details" hidden><summary><span data-i18n="decision.summary">How were these suggestions made?</span><span>＋</span></summary><div id="decision-content"></div></details>
+        </details>
       </section>
 
-      <section class="how-it-works" id="how-it-works" aria-label="探索如何发生"><div class="how-heading"><span class="small-compass">✳</span><span>从你的兴趣，走向真实城市。</span></div><div class="how-items"><article><span class="how-number">01</span><div><h3>说说你的口味</h3><p>音乐、电影、书籍，都是探索的起点。</p></div></article><article><span class="how-number">02</span><div><h3>发现文化关联</h3><p>Qloo 提供真实的兴趣关联与地点候选。</p></div></article><article><span class="how-number">03</span><div><h3>带着依据出发</h3><p>看见来源，也看见仍需确认的现实条件。</p></div></article></div></section>
+      <section class="how-it-works" id="how-it-works" aria-label="How exploration happens"><div class="how-heading"><span class="small-compass">✳</span><span data-i18n="how.heading">From your interests to the real city.</span></div><div class="how-items"><article><span class="how-number">01</span><div><h3 data-i18n="how.1t">Tell us your taste</h3><p data-i18n="how.1d">Music, film and books are all starting points.</p></div></article><article><span class="how-number">02</span><div><h3 data-i18n="how.2t">Find cultural associations</h3><p data-i18n="how.2d">Qloo provides real taste associations and place candidates.</p></div></article><article><span class="how-number">03</span><div><h3 data-i18n="how.3t">Set out with evidence</h3><p data-i18n="how.3d">See the sources, and what still needs real-world confirmation.</p></div></article></div></section>
     </section>
   </main>
   <footer><span>CityPlay AI <span class="footer-dot">·</span> Discover fun beyond the ordinary.</span><span>Powered by Qloo &amp; DeepSeek <span class="footer-dot">/</span> Local MVP</span></footer>
 </div>
-<dialog id="guess-dialog" aria-labelledby="guess-title"><div class="guess-top"><span class="eyebrow">GUESS MY INTERESTS</span><button type="button" id="guess-close" class="text-button">退出 ×</button></div><h2 id="guess-title">找找让你心动的小事</h2><p class="field-help">无需注册，也没有标准答案。选你有感觉的，其他跳过就好。</p><div id="guess-content"></div><p id="guess-error" role="alert"></p><div id="guess-actions" class="guess-actions"></div></dialog>
+<dialog id="guess-dialog" aria-labelledby="guess-title"><div class="guess-top"><span class="eyebrow">FIND YOUR NEXT FAVORITE</span><button type="button" id="guess-close" class="text-button" data-i18n="guess.close">Exit ×</button></div><h2 id="guess-title" data-i18n="guess.title">Pick a few cards, meet another life</h2><p class="field-help" data-i18n="guess.help">One liked or curious pick is enough to continue; exit anytime.</p><div id="guess-content"></div><p id="guess-error" role="alert"></p><div id="guess-actions" class="guess-actions"></div></dialog>
 </body>
 </html>

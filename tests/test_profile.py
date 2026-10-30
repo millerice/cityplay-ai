@@ -40,6 +40,15 @@ class ProfileTests(unittest.TestCase):
             with self.assertRaises(ServiceError):validate_answers({'evening':value},('secret-key',))
         with self.assertRaises(ValueError):validate_answers({})
 
+    def test_weekend_choice_cannot_be_promoted_to_existing_interest(self):
+        value=fixture()
+        value['existing_interests'][0].update(name='书店', evidence={'question_id':'weekend','quote':'书店'})
+        with self.assertRaises(ValueError):
+            validate_profile(value, {**self.answers,'weekend':'想逛书店'})
+        value['existing_interests']=[]
+        value['potential_interests'][0].update(name='逛书店', evidence={'question_id':'weekend','quote':'想逛书店'})
+        self.assertEqual(validate_profile(value, {**self.answers,'weekend':'想逛书店'})['potential_interests'][0]['name'],'逛书店')
+
     def test_merge_preserves_original_and_potential_semantics(self):
         payload=self.payload();profile,merged=confirm(self.draft,payload)
         self.assertTrue(merged.startswith(payload['existing_text']+'\n'))

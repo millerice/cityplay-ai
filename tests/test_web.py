@@ -164,6 +164,166 @@ class WebTests(unittest.TestCase):
         self.assertEqual(len(error_files), 1)
         self.assertNotIn("public synthetic interest", error_files[0].read_text())
 
+    def test_feedback_rejects_forged_place_and_preserves_taste(self):
+        draft=self.parse()
+        _,_,raw=self.post('/api/discover',{'draft_id':draft['draft_id'],'intent':draft['intent']})
+        first=self.wait(json.loads(raw)['job_id'])['result']
+        session=self.app.sessions[self.cookie.split('=',1)[1]]
+        original=json.dumps(session.confirmed,sort_keys=True)
+        _,_,raw=self.post('/api/discover',{'draft_id':draft['draft_id'],'again':True,'feedback':{'entity_id':'forged','reason':'too_far'}})
+        self.assertEqual(self.wait(json.loads(raw)['job_id'])['status'],'failed')
+        self.assertEqual(session.feedback,{})
+        rejected=first['cards'][0]['entity_id']
+        _,_,raw=self.post('/api/discover',{'draft_id':draft['draft_id'],'again':True,'feedback':{'entity_id':rejected,'reason':'too_far'}})
+        result=self.wait(json.loads(raw)['job_id'])['result']
+        self.assertTrue(result['prefer_nearby'])
+        self.assertNotIn(rejected,[c['entity_id'] for c in result['cards']])
+        self.assertEqual(json.dumps(session.confirmed,sort_keys=True),original)
+
+    def test_local_library_browse_and_choices_need_no_qloo_and_survive_memory_restart(self):
+        session=self.app.sessions[self.cookie.split('=',1)[1]]
+        self.app.library.put_entities([{'id':'local-card','name':'Local Synthetic Artist','entity_type':'artist'}],discovery=True)
+        before=session.qloo.calls
+        status,_,raw=self.post('/api/library/browse',{'domain':'music'})
+        self.assertEqual(status,200);self.assertEqual(json.loads(raw)['cards'][0]['id'],'local-card')
+        self.assertEqual(session.qloo.calls,before)
+        status,_,raw=self.post('/api/library/choice',{'id':'local-card','choice':'curious'})
+        self.assertEqual(status,200)
+        self.app.sessions.clear()
+        status,headers,raw=self.request('GET','/api/session',cookie=self.cookie)
+        self.assertEqual(status,200)
+        newcsrf=json.loads(raw)['csrf']
+        status,_,raw=self.request('POST','/api/library/browse',{'domain':'music'},cookie=self.cookie,csrf=newcsrf)
+        self.assertEqual(json.loads(raw)['choices'][0]['choice'],'curious')
+        self.assertEqual(status,200)
+
+    def test_explicit_city_conflict_is_structured_for_actionable_choice(self):
+        payload={'query':'我喜欢 Miles Davis，想在纽约喝咖啡','city':'shanghai',
+                 'area':{'lat':31.233333333333334,'lon':121.48333333333333,'radius_m':10000}}
+        status,_,raw=self.post('/api/parse',payload)
+        self.assertEqual(status,202)
+        result=self.wait(json.loads(raw)['job_id'])['result']
+        self.assertEqual(result['city_conflict'],{'requested':'new_york','selected':'shanghai'})
+        session=self.app.sessions[self.cookie.split('=',1)[1]]
+        session.taste_catalog['known']={'id':'known','name':'Synthetic Artist','entity_type':'artist'}
+        applied=self.app.apply_taste_cards(session,{'city':'shanghai','area':payload['area'],'categories':[],
+            'draft_id':result['draft_id'],'items':[{'id':'known','choice':'like'}]})
+        self.assertEqual(applied['city_conflict'],result['city_conflict'])
+        from cityplay.transport import ServiceError
+        with self.assertRaises(ServiceError) as failure:
+            self.app.discover(session,{'draft_id':applied['draft_id'],'intent':applied['intent']},'synthetic')
+        self.assertEqual(failure.exception.code,'CITY_SELECTION_REQUIRED')
+
+    def test_online_cultural_search_issues_selectable_ids_and_caches_actual_names(self):
+        session=self.app.sessions[self.cookie.split('=',1)[1]]
+        before=session.qloo.calls
+        status,_,raw=self.post('/api/taste/cards',{'domain':'music','query':'synthetic alias','page':0})
+        self.assertEqual(status,202)
+        result=self.wait(json.loads(raw)['job_id'])['result']
+        self.assertEqual(result['cards'][0]['name'],'SYNTHETIC ARTIST')
+        self.assertGreater(session.qloo.calls,before)
+        local=self.app.library.browse(query='SYNTHETIC ARTIST')
+        self.assertEqual(local['cards'][0]['id'],result['cards'][0]['id'])
+        status,_,raw=self.post('/api/library/choice',{'id':result['cards'][0]['id'],'choice':'like'})
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw)['choices'][0]['id'],result['cards'][0]['id'])
+
+    def test_discovery_snapshot_is_reused_for_identical_new_draft(self):
+        draft=self.parse()
+        _,_,raw=self.post('/api/discover',{'draft_id':draft['draft_id'],'intent':draft['intent']})
+        first=self.wait(json.loads(raw)['job_id'])['result']
+        session=self.app.sessions[self.cookie.split('=',1)[1]]
+        calls=session.qloo.calls
+        draft=self.parse()
+        _,_,raw=self.post('/api/discover',{'draft_id':draft['draft_id'],'intent':draft['intent']})
+        second=self.wait(json.loads(raw)['job_id'])['result']
+        self.assertEqual(second['cache_origin'],'sqlite')
+        self.assertEqual(session.qloo.calls,calls)
+        self.assertEqual(second['cards'],first['cards'])
+
+    def test_parallel_bundle_reuses_local_snapshot_without_new_qloo(self):
+        draft=self.parse()
+        _,_,raw=self.post('/api/discover',{'draft_id':draft['draft_id'],'intent':draft['intent']})
+        self.wait(json.loads(raw)['job_id'])
+        _,_,raw=self.post('/api/parallel',{'draft_id':draft['draft_id']})
+        self.wait(json.loads(raw)['job_id'])
+        session=self.app.sessions[self.cookie.split('=',1)[1]]
+        count=session.qloo.calls
+        _,_,raw=self.post('/api/parallel',{'draft_id':draft['draft_id']})
+        result=self.wait(json.loads(raw)['job_id'])['result']
+        self.assertEqual(session.qloo.calls,count)
+        self.assertEqual(result['versions'][0]['result']['cache_origin'],'sqlite')
+
+    def test_card_confirmation_accepts_only_issued_entities_and_keeps_constraints(self):
+        draft=self.parse()
+        session=self.app.sessions[self.cookie.split('=',1)[1]]
+        session.intent['max_budget']={'amount':20,'currency':'USD'}
+        session.independent_bookstore=True
+        _,_,raw=self.post('/api/taste/cards',{'domain':'music','query':'SYNTHETIC ARTIST'})
+        cards=self.wait(json.loads(raw)['job_id'])['result']['cards']
+        self.assertEqual(cards[0]['id'],'synthetic-artist')
+        payload={'city':'new_york','area':session.area,'categories':['bookstore'],'draft_id':draft['draft_id'],'items':[{'id':'forged','choice':'like'}]}
+        self.assertEqual(self.post('/api/taste/cards/confirm',payload)[0],400)
+        payload['items']=[{'id':cards[0]['id'],'choice':'curious'}]
+        status,_,raw=self.post('/api/taste/cards/confirm',payload)
+        self.assertEqual(status,200)
+        result=json.loads(raw)
+        self.assertEqual(result['starting_mode'],'curiosity')
+        self.assertEqual(result['intent']['max_budget'],{'amount':20,'currency':'USD'})
+        self.assertTrue(session.independent_bookstore)
+        self.assertEqual(session.taste_choices[0]['choice'],'curious')
+        self.assertEqual(result['selections'],{'interests.0':'synthetic-artist'})
+
+    def test_exploration_subset_does_not_overwrite_saved_library(self):
+        self.parse();session=next(iter(self.app.sessions.values()))
+        for index in range(8):
+            card={'id':'saved-'+str(index),'name':'SYNTHETIC '+str(index),'entity_type':'artist'}
+            session.taste_catalog[card['id']]=card
+            choice='like' if index<5 else 'curious'
+            status,_,_=self.post('/api/library/choice',{'id':card['id'],'choice':choice})
+            self.assertEqual(status,200)
+        saved=self.app.library.choices(session.profile_id)
+        payload={'city':'new_york','area':session.area,'categories':[],
+                 'items':[{'id':'saved-4','choice':'like'},{'id':'saved-7','choice':'curious'}]}
+        status,_,raw=self.post('/api/taste/cards/confirm',payload)
+        self.assertEqual(status,200);draft=json.loads(raw)
+        self.assertEqual(len(draft['intent']['interests']),1)
+        self.assertEqual(draft['curiosity']['id'],'saved-7')
+        self.assertEqual(self.app.library.choices(session.profile_id),saved)
+        payload['items']=[{'id':'saved-'+str(i),'choice':'like'} for i in range(5)]
+        self.assertEqual(self.post('/api/taste/cards/confirm',payload)[0],400)
+        self.assertEqual(self.app.library.choices(session.profile_id),saved)
+
+    def test_direct_taste_prepare_validates_without_model_and_keeps_area(self):
+        payload={'city':'new_york','area':{'lat':40.722668,'lon':-73.99823,'radius_m':10000},'interests':[{'kind':'entity','query':'SYNTHETIC ARTIST','entity_type':'artist'}],'categories':['bookstore']}
+        status,_,raw=self.post('/api/taste/prepare',payload)
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw)['intent']['interests'],payload['interests'])
+        self.assertEqual(json.loads(raw)['intent']['exclude_categories'],[])
+        payload['exclude_categories']=['hotel']
+        session=next(iter(self.app.sessions.values()))
+        draft=self.app.prepare_taste(session,payload)
+        self.assertEqual(draft['intent']['exclude_categories'],['hotel'])
+        payload['interests']=[]
+        self.assertEqual(self.post('/api/taste/prepare',payload)[0],400)
+        payload['interests']=[{'kind':'entity','query':'synthetic-qloo-key','entity_type':'artist'}]
+        self.assertEqual(self.post('/api/taste/prepare',payload)[0],400)
+
+    def test_parallel_jobs_and_selection_are_bound_to_current_draft(self):
+        draft=self.parse()
+        _,_,raw=self.post('/api/discover',{'draft_id':draft['draft_id'],'intent':draft['intent']})
+        self.wait(json.loads(raw)['job_id'])
+        _,_,raw=self.post('/api/parallel',{'draft_id':draft['draft_id']})
+        result=self.wait(json.loads(raw)['job_id'])['result']
+        self.assertEqual(result['status'],'parallel')
+        self.assertEqual(result['versions'][0]['id'],'familiar')
+        self.assertEqual(len(result['versions'][0]['result']['cards']),3)
+        status,_,raw=self.post('/api/parallel/select',{'draft_id':draft['draft_id'],'version':'familiar'})
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw)['intent'],draft['intent'])
+        status,_,raw=self.post('/api/parallel/select',{'draft_id':draft['draft_id'],'version':'invented'})
+        self.assertEqual(status,400)
+
     def test_comparison_preserves_session_state_and_same_constraints(self):
         draft=self.parse()
         _,_,raw=self.post("/api/discover",{"draft_id":draft["draft_id"],"intent":draft["intent"]})

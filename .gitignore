@@ -9,3 +9,8 @@ __pycache__/
 *.swo
 # Local handoff notes are not part of the public submission.
 /CityPlay_AI_Codex_Handoff.md
+
+# Private local SQLite files
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
