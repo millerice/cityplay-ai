@@ -145,6 +145,35 @@ class WebTests(unittest.TestCase):
             job = self.wait(json.loads(raw)["job_id"])
             self.assertEqual(job["status"], "failed"); self.assertEqual(job["error"]["code"], "SENSITIVE_INPUT_REJECTED")
 
+    def test_model_key_is_brought_by_the_browser_not_the_server(self):
+        self.app.settings = Settings("synthetic-qloo-key", "")  # Deployments ship without a built-in key.
+        payload = {"query": "public synthetic artist and books", "city": "new_york", "area": {"lat": 40.722668, "lon": -73.99823, "radius_m": 10000}}
+        status, _, raw = self.post("/api/parse", payload)
+        self.assertEqual(status, 400); self.assertEqual(json.loads(raw)["error"]["code"], "MODEL_KEY_REQUIRED")
+        status, _, raw = self.request("POST", "/api/parse", payload, self.cookie, self.csrf, extra={"X-Model-Key": "bad key!"})
+        self.assertEqual(status, 400); self.assertEqual(json.loads(raw)["error"]["code"], "MODEL_KEY_INVALID")
+        status, _, raw = self.request("POST", "/api/parse", payload, self.cookie, self.csrf,
+                                      extra={"X-Model-Key": "sk-browser-synthetic-key", "X-Model-Name": "bad name!"})
+        self.assertEqual(status, 400); self.assertEqual(json.loads(raw)["error"]["code"], "MODEL_KEY_INVALID")
+        status, _, raw = self.request("POST", "/api/parse", payload, self.cookie, self.csrf,
+                                      extra={"X-Model-Key": "sk-browser-synthetic-key", "X-Model-Name": "deepseek-v4-flash"})
+        self.assertEqual(status, 202)
+        result = self.wait(json.loads(raw)["job_id"])["result"]
+        self.assertTrue(result["intent"]["interests"])
+        # Any well-formed model id is accepted, not only the presets.
+        status, _, raw = self.request("POST", "/api/parse", payload, self.cookie, self.csrf,
+                                      extra={"X-Model-Key": "sk-browser-synthetic-key", "X-Model-Name": "deepseek-reasoner"})
+        self.assertEqual(status, 202)
+        self.wait(json.loads(raw)["job_id"])
+        # The browser-supplied key is itself a secret and must not reach the model.
+        status, _, raw = self.request("POST", "/api/parse", {**payload, "query": "places like sk-browser-synthetic-key"},
+                                      self.cookie, self.csrf, extra={"X-Model-Key": "sk-browser-synthetic-key"})
+        job = self.wait(json.loads(raw)["job_id"])
+        self.assertEqual(job["status"], "failed"); self.assertEqual(job["error"]["code"], "SENSITIVE_INPUT_REJECTED")
+        # Clearing the header clears the session key again.
+        status, _, raw = self.post("/api/parse", payload)
+        self.assertEqual(status, 400); self.assertEqual(json.loads(raw)["error"]["code"], "MODEL_KEY_REQUIRED")
+
     def test_model_validation_details_reach_browser_without_raw_output(self):
         class InvalidModel:
             model = "synthetic"

@@ -1,7 +1,10 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const state = {city: "new_york", csrf: null, presets: {}, draft: null, busy: false, result: null, dirty: false, confirmedIntent: null, qlooReady: null};
+const state = {city: "new_york", csrf: null, presets: {}, draft: null, busy: false, result: null, dirty: false, confirmedIntent: null, qlooReady: null, modelReady: null};
+// Browser-supplied model credentials: kept only in this tab's memory. Never
+// written to storage or disk; closing the tab clears them for good.
+const modelConfig = {key: "", name: "deepseek-v4-pro"};
 // Canonical zh labels remain the parsing/lookup source; display goes through categoryLabel().
 const categories = {bookstore: "书店", coffee: "咖啡", live_music: "现场音乐", park: "公园", museum: "博物馆", restaurant: '餐厅', bakery: '烘焙甜点', gallery: '画廊', cinema: '电影院', theater: '剧院', record_store: '唱片店', clothing: '服饰店', garden: '花园'};
 function selectedVenueCategories(source='library') {
@@ -81,7 +84,9 @@ async function refreshSession() {
   return session;
 }
 async function request(path, payload, retried = false) {
-  const response = await fetch(path, payload ? {method: "POST", headers: {"Content-Type": "application/json", "X-CSRF-Token": state.csrf}, body: JSON.stringify(payload)} : {});
+  const headers = {"Content-Type": "application/json", "X-CSRF-Token": state.csrf};
+  if (payload && modelConfig.key) { headers["X-Model-Key"] = modelConfig.key; headers["X-Model-Name"] = modelConfig.name; }
+  const response = await fetch(path, payload ? {method: "POST", headers, body: JSON.stringify(payload)} : {});
   const data = await response.json().catch(() => null);
   // A restarted server drops its in-memory sessions; re-bootstrap once and replay the request.
   if (response.status === 403 && payload && !retried && data && data.error && data.error.code === "INVALID_SESSION_OR_CSRF") {
@@ -517,6 +522,7 @@ $("query-form").addEventListener("submit", async (event) => {
   event.preventDefault(); if (state.busy || !state.csrf) return;
   if(state.inputMode!=="natural"){await prepareTaste();return;}
   if(!$("query").value.trim()){notice(t("notice.queryRequired"));return;}
+  if(!modelConfig.key && !state.modelReady){notice(t("model.requiredNotice"));openModelConfig();return;}
   resetDraft(); setBusy(true, "parse");
   try {const draft = await job("/api/parse", {query: $("query").value.trim(), city: state.city, area: area()}); renderIntent(draft,!!draft.intent.clarifications.length);} catch (error) {showError(error);} finally {setBusy(false);}
   if(state.draft){const i=state.draft.intent;if(!i.clarifications.length&&!i.strict_city&&!i.novelty_requested&&!i.open_now&&!i.max_budget&&!i.available_minutes)await launchParallel();else $("confirmation").scrollIntoView({behavior:"smooth",block:"start"});}
@@ -544,9 +550,41 @@ document.querySelectorAll("[data-example]").forEach((button) => button.addEventL
   const examples = {books: "example.books", coffee: "example.coffee", movie: "example.movie"};
   setInputMode("natural"); $("query").value = t(examples[button.dataset.example]); $("query").focus();
 }));
+function modelStatus(){
+  $("model-config-open").classList.toggle("ready", !!(modelConfig.key || state.modelReady));
+  $("model-config-status").textContent = modelConfig.key ? t("model.statusOwn") : state.modelReady ? t("model.statusServer") : t("model.statusNone");
+}
+function openModelConfig(open = true){
+  const panel = $("model-config");
+  panel.hidden = !open;
+  $("model-config-open").setAttribute("aria-expanded", String(open));
+  if (open) {modelStatus(); $("model-key-input").focus();}
+}
+$("model-config-open").addEventListener("click", () => openModelConfig($("model-config").hidden));
+$("model-config-close").addEventListener("click", () => openModelConfig(false));
+$("model-name-select").addEventListener("change", () => {
+  const custom = $("model-name-select").value === "__custom__";
+  $("model-custom-input").hidden = !custom;
+  if (custom) $("model-custom-input").focus();
+});
+$("model-config-save").addEventListener("click", () => {
+  const value = $("model-key-input").value.trim();
+  if (!value) {$("model-config-status").textContent = t("model.empty"); return;}
+  const selected = $("model-name-select").value;
+  const name = selected === "__custom__" ? $("model-custom-input").value.trim() : selected;
+  if (selected === "__custom__" && !name) {$("model-config-status").textContent = t("model.customEmpty"); return;}
+  modelConfig.key = value; modelConfig.name = name;
+  $("model-key-input").value = "";
+  openModelConfig(false); modelStatus(); notice(t("model.saved"));
+});
+$("model-config-clear").addEventListener("click", () => {
+  modelConfig.key = ""; $("model-key-input").value = "";
+  modelStatus(); notice(t("model.cleared"));
+});
 request("/api/session").then((session) => {
-  state.csrf = session.csrf; state.presets = session.presets; state.qlooReady = session.configured.qloo; document.dispatchEvent(new Event("cityplay-ready"));
+  state.csrf = session.csrf; state.presets = session.presets; state.qlooReady = session.configured.qloo; state.modelReady = session.configured.model; document.dispatchEvent(new Event("cityplay-ready"));
   $("service-status-text").textContent = session.configured.qloo ? t("status.ready") : t("status.unconfigured");
+  modelStatus();
   if (!session.configured.qloo) notice(t("notice.configureQloo"));
 }).catch(() => {$("service-status-text").textContent = t("status.unreachable"); notice(t("notice.serviceUnreachable"));});
 
@@ -583,6 +621,7 @@ $('edit-exploration').addEventListener('click',()=>{if(!state.busy)returnToEdito
 document.addEventListener('cityplay-lang-changed',()=>{
   applyAreaLabels();
   if(state.qlooReady!==null)$('service-status-text').textContent=state.qlooReady?t('status.ready'):t('status.unconfigured');
+  if(document.getElementById('model-config-status'))modelStatus();
   if(state.busy)return;
   if(state.draft&&!state.dirty)renderIntent(structuredClone(state.draft),false);
   if(state.parallel)renderParallel();

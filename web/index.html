@@ -20,8 +20,19 @@
 <div class="page-shell">
   <header class="topbar">
     <a class="brand" href="/" aria-label="CityPlay AI home" data-i18n-aria="brand.aria"><img src="/favicon.svg" alt="" width="34" height="34"><span>CityPlay<span class="brand-ai">AI</span></span></a>
+    <button id="model-config-open" class="model-config-open" type="button" aria-haspopup="dialog" aria-expanded="false"><span aria-hidden="true">⚙</span><span data-i18n="model.open">Model key</span></button>
     <div class="topbar-right"><span class="availability" id="service-status"><i></i> <span id="service-status-text" data-i18n="topbar.checking">Checking service</span></span><button id="lang-toggle" class="lang-toggle" type="button" aria-label="Switch to Chinese">中文</button><span class="preview-badge" data-i18n="topbar.preview">Local preview</span></div>
   </header>
+  <div id="model-config" class="model-config" hidden role="dialog" aria-labelledby="model-config-title">
+    <h3 id="model-config-title" data-i18n="model.title">Bring your own model key</h3>
+    <p class="field-help" data-i18n="model.help">Intent understanding runs on a DeepSeek model. Paste your own API key — this deployment ships without a built-in key.</p>
+    <label class="model-field"><span data-i18n="model.keyLabel">API key</span><input id="model-key-input" type="password" autocomplete="off" spellcheck="false" maxlength="200" placeholder="sk-…" aria-describedby="model-config-status"></label>
+    <label class="model-field"><span data-i18n="model.nameLabel">Model</span><select id="model-name-select"><option value="deepseek-v4-pro">deepseek-v4-pro</option><option value="deepseek-v4-flash">deepseek-v4-flash</option><option value="deepseek-flash">deepseek-flash</option><option value="__custom__" data-i18n="model.custom">Custom…</option></select></label>
+    <input id="model-custom-input" class="model-custom-input" hidden maxlength="60" placeholder="model id, e.g. deepseek-reasoner" data-i18n-placeholder="model.customPlaceholder" aria-label="Custom model id" data-i18n-aria="model.customAria">
+    <p class="field-help" data-i18n="model.memoryNote">The key lives only in this tab's memory: never saved, never written to disk, cleared when the tab closes. A new tab must re-enter it.</p>
+    <p id="model-config-status" class="field-help" role="status"></p>
+    <div class="model-actions"><button id="model-config-save" type="button" class="secondary-button" data-i18n="model.save">Save key</button><button id="model-config-clear" type="button" class="text-button" data-i18n="model.forget">Forget</button><button id="model-config-close" type="button" class="text-button" data-i18n="model.close">Close</button></div>
+  </div>
 
   <main>
     <section class="hero" aria-labelledby="hero-title">

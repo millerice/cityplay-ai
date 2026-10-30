@@ -5,6 +5,26 @@
 const I18N = {
   en: {
     "lang.switch": "Switch to Chinese",
+    "model.open": "Model key",
+    "model.title": "Bring your own model key",
+    "model.help": "Intent understanding runs on a DeepSeek model. Paste your own API key — this deployment ships without a built-in key.",
+    "model.keyLabel": "API key",
+    "model.nameLabel": "Model",
+    "model.custom": "Custom…",
+    "model.customPlaceholder": "model id, e.g. deepseek-reasoner",
+    "model.customAria": "Custom model id",
+    "model.customEmpty": "Type a model id first.",
+    "model.memoryNote": "The key lives only in this tab's memory: never saved, never written to disk, cleared when the tab closes. A new tab must re-enter it.",
+    "model.save": "Save key",
+    "model.forget": "Forget",
+    "model.close": "Close",
+    "model.saved": "Model key is active for this tab.",
+    "model.cleared": "Model key cleared.",
+    "model.empty": "Paste an API key first.",
+    "model.statusOwn": "Using your key — this tab only",
+    "model.statusServer": "Using the server's key",
+    "model.statusNone": "No model key yet — natural-language input needs one",
+    "model.requiredNotice": "Natural-language understanding needs a model key. Use “Model key” at the top left to paste your own.",
     "topbar.checking": "Checking service",
     "topbar.preview": "Local preview",
     "skip.link": "Skip to exploration form",
@@ -260,6 +280,8 @@ const I18N = {
     "sum.tail": "Confirmed cultural objects are used for this run; unconfirmed starting points are kept, not swapped for other works.",
     "sep": ", ",
     "err.GENERIC": "This exploration didn't complete; please retry shortly.",
+    "err.MODEL_KEY_REQUIRED": "A model key is required. Configure your own via “Model key” at the top left.",
+    "err.MODEL_KEY_INVALID": "That model key doesn't look valid; check it and try again.",
     "err.CITY_SELECTION_REQUIRED": "Please align the exploration city between your description and the page.",
     "err.INVALID_PROFILE_OUTPUT": "The profile didn't pass checks; your answers are kept. Retry.",
     "err.PROFILE_INPUT_TOO_LONG": "The combined text is too long — remove tags or shorten the original.",
@@ -367,6 +389,26 @@ const I18N = {
   },
   zh: {
     "lang.switch": "切换到英文",
+    "model.open": "模型 Key",
+    "model.title": "使用你自己的模型 Key",
+    "model.help": "意图理解由 DeepSeek 模型完成。请粘贴你自己的 API Key——本部署不内置任何 Key。",
+    "model.keyLabel": "API Key",
+    "model.nameLabel": "模型",
+    "model.custom": "自定义…",
+    "model.customPlaceholder": "模型 ID，例如 deepseek-reasoner",
+    "model.customAria": "自定义模型 ID",
+    "model.customEmpty": "请先输入模型 ID。",
+    "model.memoryNote": "Key 仅保存在当前标签页的内存中：不保存、不落盘，关闭标签页即自动清除；新开标签页需重新输入。",
+    "model.save": "保存 Key",
+    "model.forget": "清除",
+    "model.close": "关闭",
+    "model.saved": "模型 Key 已在本标签页生效。",
+    "model.cleared": "模型 Key 已清除。",
+    "model.empty": "请先粘贴 API Key。",
+    "model.statusOwn": "正在使用你的 Key（仅本标签页）",
+    "model.statusServer": "正在使用服务器 Key",
+    "model.statusNone": "尚未配置模型 Key——自然语言输入需要配置",
+    "model.requiredNotice": "自然语言理解需要模型 Key。请点左上角“模型 Key”配置你自己的。",
     "topbar.checking": "正在检查服务",
     "topbar.preview": "本地预览",
     "skip.link": "跳到探索表单",
@@ -622,6 +664,8 @@ const I18N = {
     "sum.tail": "可确认的文化对象用于本轮探索；未确认的起点先保留，不替换成其他作品。",
     "sep": "、",
     "err.GENERIC": "暂时未能完成这轮探索，请稍后重试。",
+    "err.MODEL_KEY_REQUIRED": "需要模型 Key。请在左上角“模型 Key”中配置你自己的。",
+    "err.MODEL_KEY_INVALID": "模型 Key 格式无效，请检查后重试。",
     "err.CITY_SELECTION_REQUIRED": "请先统一描述与页面中的探索城市。",
     "err.INVALID_PROFILE_OUTPUT": "画像证据未通过检查，答案已保留，请重试。",
     "err.PROFILE_INPUT_TOO_LONG": "合并后内容太长，请减少标签或缩短原有文字。",
@@ -751,13 +795,22 @@ function versionText(version, part, fallback) {
   const value = i18nLookup("v." + version + "." + part);
   return value === null ? fallback : value;
 }
+function applyElementText(element, value) {
+  // Translate only the element's own text run; nested controls (label>select,
+  // label>input, button>span) survive a language switch intact.
+  const texts = Array.prototype.filter.call(element.childNodes, (n) => n.nodeType === 3 && n.nodeValue.trim());
+  if (texts.length) {
+    texts[0].nodeValue = value;
+    for (let i = 1; i < texts.length; i++) element.removeChild(texts[i]);
+  } else element.insertBefore(document.createTextNode(value), element.firstChild);
+}
 function setLang(lang) {
   if (lang !== "en" && lang !== "zh") return;
   LangState.lang = lang;
   try { localStorage.setItem("cityplay-lang", lang); } catch (_) { /* Private mode or storage blocked; the choice still applies for this page. */ }
   if (typeof document === "undefined" || !document.querySelectorAll) return;
   document.documentElement.setAttribute("lang", lang);
-  document.querySelectorAll("[data-i18n]").forEach((element) => { const value = i18nLookup(element.getAttribute("data-i18n")); if (value !== null) element.textContent = value; });
+  document.querySelectorAll("[data-i18n]").forEach((element) => { const value = i18nLookup(element.getAttribute("data-i18n")); if (value !== null) applyElementText(element, value); });
   document.querySelectorAll("[data-i18n-placeholder]").forEach((element) => { const value = i18nLookup(element.getAttribute("data-i18n-placeholder")); if (value !== null) element.placeholder = value; });
   document.querySelectorAll("[data-i18n-aria]").forEach((element) => { const value = i18nLookup(element.getAttribute("data-i18n-aria")); if (value !== null) element.setAttribute("aria-label", value); });
   const toggle = document.getElementById("lang-toggle");

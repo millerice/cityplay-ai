@@ -76,12 +76,16 @@ class Session:
     taste_choices: list = field(default_factory=list)
     taste_curiosity: dict | None = None
     taste_starting_mode: str = 'likes'
+    # Browser-supplied model credentials: in-memory only, never persisted.
+    model_key: str = ""
+    model_name: str = ""
 
 
 class Application:
     def __init__(self, settings=None, *, model_factory=None, qloo_factory=None, verifier_factory=None,
                  evidence_dir=None, process_budget=120, budget_window_seconds=3600):
         self.settings = settings or Settings.load()
+        self._builtin_model_factory = model_factory is None
         self.model_factory = model_factory or (lambda: DeepSeekClient(self.settings.deepseek_key, self.settings.model))
         self.qloo_factory = qloo_factory or (lambda: QlooClient(self.settings.qloo_key, sender=self.qloo_network, max_calls=40))
         self.verifier_factory = verifier_factory or (lambda: WebsiteVerifier(max_checks=12))
@@ -126,6 +130,32 @@ class Application:
             self.sessions[identifier] = value
             return identifier, value
 
+    def secrets(self, session=None):
+        # Keys that must never surface verbatim in user input, including any key
+        # the browser supplied for this session.
+        return tuple(key for key in (self.settings.qloo_key, self.settings.deepseek_key,
+                                     getattr(session, "model_key", "")) if key)
+
+    def update_model(self, session, key, name):
+        # A browser tab supplies its own model credentials per request; they are
+        # kept in the in-memory session only and an empty header clears them.
+        key = key.strip() if isinstance(key, str) else ""
+        name = name.strip() if isinstance(name, str) else ""
+        if key and not re.fullmatch(r"[A-Za-z0-9_.\-]{8,200}", key):
+            raise ServiceError("MODEL_KEY_INVALID", status=400)
+        # Any well-formed model id is allowed (new releases shouldn't need a code change).
+        if name and not re.fullmatch(r"[A-Za-z0-9._\-]{1,60}", name):
+            raise ServiceError("MODEL_KEY_INVALID", status=400)
+        session.model_key, session.model_name = key, (name or session.model_name)
+
+    def build_model(self, session=None):
+        # An explicitly injected factory (tests, local tools) always wins;
+        # otherwise the browser-supplied key takes precedence over any built-in key.
+        if not self._builtin_model_factory and self.model_factory:
+            return self.model_factory()
+        return DeepSeekClient(getattr(session, "model_key", "") or self.settings.deepseek_key,
+                              getattr(session, "model_name", "") or self.settings.model)
+
     def start(self, session, kind, payload):
         with self.lock:
             now = time.monotonic()
@@ -133,6 +163,9 @@ class Application:
             bucket[:]=[x for x in bucket if now-x < 60]
             if session.busy:
                 raise ServiceError("JOB_ALREADY_RUNNING", status=409)
+            if kind in {"parse", "guess"} and not (getattr(session, "model_key", "") or self.settings.deepseek_key):
+                # No built-in key ships with the deployment; visitors bring their own.
+                raise ServiceError("MODEL_KEY_REQUIRED", status=400, retryable=False)
             if len(bucket) >= (10 if kind=='taste_cards' else 6):
                 raise ServiceError("LOCAL_REQUEST_LIMIT", status=429)
             if not self.slots.acquire(blocking=False):
@@ -160,8 +193,8 @@ class Application:
                 pass
         try:
             if kind == "guess":
-                answers = validate_answers(payload["answers"], (self.settings.qloo_key, self.settings.deepseek_key))
-                model = self.model_factory()
+                answers = validate_answers(payload["answers"], self.secrets(session))
+                model = self.build_model(session)
                 model.max_tokens = 2600
                 profile = generate(model, answers)
                 with self.lock:
@@ -177,10 +210,10 @@ class Application:
                 area = Area(**payload["area"])
                 if not isinstance(query, str) or not 1 <= len(query.strip()) <= 2000:
                     raise ValueError("Invalid query")
-                if any(secret and secret in query for secret in [self.settings.qloo_key, self.settings.deepseek_key]) or re.search(r"\S+@\S+|\d{10,}", query):
+                if any(secret and secret in query for secret in self.secrets(session)) or re.search(r"\S+@\S+|\d{10,}", query):
                     raise ServiceError("SENSITIVE_INPUT_REJECTED", status=400)
                 self.validate_area(city, area)
-                model = self.model_factory()
+                model = self.build_model(session)
                 city_context = "纽约附近" if city == "new_york" else "上海附近"
                 intent = ModelIntentParser(model).parse(query + "\n页面上明确选择的探索区域：" + city_context)
                 model_trace = model.trace
@@ -207,7 +240,7 @@ class Application:
             elif kind == "parallel":
                 result = self.parallel(session, payload)
             elif kind == 'taste_cards':
-                result = load_cards(session,payload,(self.settings.qloo_key,self.settings.deepseek_key))
+                result = load_cards(session,payload,self.secrets(session))
                 self.library.put_entities(result['cards'])
             else:
                 result = self.discover(session, payload, identifier)
@@ -239,7 +272,7 @@ class Application:
                 if payload == session.profile_receipt["payload"]:
                     return session.profile_receipt["result"]
                 raise ServiceError("PROFILE_ALREADY_CONFIRMED", status=409)
-            profile, merged = confirm(session.profile_draft, payload, (self.settings.qloo_key, self.settings.deepseek_key))
+            profile, merged = confirm(session.profile_draft, payload, self.secrets(session))
             identifier = str(uuid.uuid4())
             save_private(self.evidence_dir / (identifier + ".profile.json"), profile, self.settings)
             result = {"status": "confirmed", "merged_text": merged, "profile_id": identifier}
@@ -274,7 +307,7 @@ class Application:
         intent=Intent.from_dict({'city':city,'interests':payload['interests'],'categories':payload['categories'],'exclude_categories':payload.get('exclude_categories',[])})
         if not intent.interests: raise ValueError('Choose at least one taste')
         for interest in intent.interests:
-            if any(key and key in interest.query for key in (self.settings.qloo_key,self.settings.deepseek_key)):
+            if any(key and key in interest.query for key in self.secrets(session)):
                 raise ServiceError('SENSITIVE_INPUT_REJECTED',status=400)
         values=asdict(intent);values.pop('parser')
         with self.lock:
@@ -290,7 +323,7 @@ class Application:
         if set(payload)-{'domain','query','offset'}:raise ValueError('Invalid browse')
         query=payload.get('query','')
         if not isinstance(query,str):raise ValueError('Invalid query')
-        if any(secret and secret in query for secret in (self.settings.qloo_key,self.settings.deepseek_key)):raise ServiceError('SENSITIVE_INPUT_REJECTED',status=400)
+        if any(secret and secret in query for secret in self.secrets(session)):raise ServiceError('SENSITIVE_INPUT_REJECTED',status=400)
         result=self.library.browse(payload.get('domain','all'),query,payload.get('offset',0),discovery_only=not query.strip())
         for card in result['cards']:session.taste_catalog[card['id']]=card
         choices=self.library.choices(session.profile_id)
@@ -349,7 +382,7 @@ class Application:
         if alternative is not None:
             candidate={**original,'interests':[alternative]}
             Intent.from_dict(candidate)
-            if any(key and key in alternative['query'] for key in (self.settings.qloo_key,self.settings.deepseek_key)):
+            if any(key and key in alternative['query'] for key in self.secrets(session)):
                 raise ServiceError('SENSITIVE_INPUT_REJECTED',status=400)
         context={'kind':'parallel','intent':original,'area':session.area,'alternative':alternative,'feedback':session.feedback,
                  'independent':session.independent_bookstore,'nearby':session.prefer_nearby}
@@ -403,7 +436,7 @@ class Application:
         if feedback is not None:
             if not isinstance(feedback, dict) or set(feedback) != {'entity_id','reason'} or feedback.get('reason') not in {'not_now','experienced_dislike','too_far'} or feedback.get('entity_id') not in {x['entity_id'] for x in session.last_cards}:
                 raise ValueError('Invalid feedback')
-        if any(secret and secret in interest.query for secret in [self.settings.qloo_key, self.settings.deepseek_key] for interest in intent.interests):
+        if any(secret and secret in interest.query for secret in self.secrets(session) for interest in intent.interests):
             raise ServiceError("SENSITIVE_INPUT_REJECTED", status=400)
         if intent.city != session.city:
             raise ServiceError("AREA_CITY_MISMATCH", status=400)
@@ -421,7 +454,7 @@ class Application:
         selections = payload.get("selections", {})
         if not isinstance(selections, dict) or len(selections) > 8 or any(not isinstance(k, str) or not isinstance(v, str) for k, v in selections.items()):
             raise ValueError("Invalid selections")
-        if any(secret and secret in part for secret in (self.settings.qloo_key,self.settings.deepseek_key) for k,v in selections.items() for part in (k,v)):
+        if any(secret and secret in part for secret in self.secrets(session) for k,v in selections.items() for part in (k,v)):
             raise ServiceError('SENSITIVE_INPUT_REJECTED',status=400)
         session.selections.update(selections)
         def progress(state, details):
@@ -522,6 +555,7 @@ class Handler(BaseHTTPRequestHandler):
             _, session = self.browser_session()
             if not session or not secrets.compare_digest(self.headers.get("X-CSRF-Token", ""), session.csrf):
                 raise ServiceError("INVALID_SESSION_OR_CSRF", status=403)
+            self.server.app.update_model(session, self.headers.get("X-Model-Key", ""), self.headers.get("X-Model-Name", ""))
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 raise ServiceError("JSON_REQUIRED", status=415)
             size = int(self.headers.get("Content-Length", "0"))
