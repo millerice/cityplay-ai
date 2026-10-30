@@ -548,7 +548,14 @@ function renderParallel(){
     list.append(card);
   }
   if(!state.parallel.versions.some(x=>x.id==='alternative')){
-    const card=node('article','parallel-version');card.append(node('strong','',t('parallel.altCardTitle')),node('p','',t('parallel.altCardHelp')),node('small','field-help',t('parallel.altCardNote')));list.append(card);
+    const card=node('article','parallel-version');
+    card.append(node('strong','',t('parallel.altCardTitle')),node('p','',t('parallel.altCardHelp')),node('small','field-help',t('parallel.altCardNote')));
+    const jump=node('button','text-button',t('parallel.altBuild'));jump.type='button';
+    jump.addEventListener('click',()=>{
+      const details=$('alternative-entry');
+      if(details)details.open=true;$('alternative-query')?.focus();
+    });
+    card.append(jump);list.append(card);
   }
   const active=state.parallel.versions.find(x=>x.id===state.parallel.active);
   const path=$('parallel-path');path.replaceChildren();
