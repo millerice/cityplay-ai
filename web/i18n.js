@@ -842,7 +842,7 @@ function setLang(lang) {
   document.querySelectorAll("[data-i18n-placeholder]").forEach((element) => { const value = i18nLookup(element.getAttribute("data-i18n-placeholder")); if (value !== null) element.placeholder = value; });
   document.querySelectorAll("[data-i18n-aria]").forEach((element) => { const value = i18nLookup(element.getAttribute("data-i18n-aria")); if (value !== null) element.setAttribute("aria-label", value); });
   const toggle = document.getElementById("lang-toggle");
-  if (toggle) { toggle.textContent = lang === "en" ? "中文" : "EN"; toggle.setAttribute("aria-label", t("lang.switch")); }
+  if (toggle) { toggle.textContent = lang === "en" ? "CN" : "EN"; toggle.setAttribute("aria-label", t("lang.switch")); }
   document.dispatchEvent(new Event("cityplay-lang-changed"));
 }
 if (typeof document !== "undefined" && document.querySelectorAll) {
