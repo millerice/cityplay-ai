@@ -20,6 +20,7 @@ selected directions across 13 verified categories. See [live category validation
 ## Try it
 
 - **Live demo:** [https://cityplay-ai.onrender.com/](https://cityplay-ai.onrender.com/)
+- **Demo video:** [https://youtu.be/AjQtP9XN0Rw](https://youtu.be/AjQtP9XN0Rw)
 - **Public source:** [millerice/cityplay-ai](https://github.com/millerice/cityplay-ai) (MIT)
 
 Open the live demo and paste your own Qloo + model keys via **⚙ API keys** (top left).

@@ -74,6 +74,7 @@ useful candidate changes and the coverage limits.
 ## Try it
 
 - **Live demo:** https://cityplay-ai.onrender.com/
+- **Demo video:** https://youtu.be/AjQtP9XN0Rw
 - **Source:** https://github.com/millerice/cityplay-ai (public, MIT)
 
 API keys are **bring-your-own**: the deployment ships with no baked-in keys. Open
