@@ -2,9 +2,9 @@
 
 const $ = (id) => document.getElementById(id);
 const state = {city: "new_york", csrf: null, presets: {}, draft: null, busy: false, result: null, dirty: false, confirmedIntent: null, qlooReady: null, modelReady: null};
-// Browser-supplied model credentials: kept only in this tab's memory. Never
+// Browser-supplied API credentials: kept only in this tab's memory. Never
 // written to storage or disk; closing the tab clears them for good.
-const modelConfig = {key: "", name: "deepseek-v4-pro"};
+const modelConfig = {key: "", name: "deepseek-v4-pro", qlooKey: ""};
 // Canonical zh labels remain the parsing/lookup source; display goes through categoryLabel().
 const categories = {bookstore: "书店", coffee: "咖啡", live_music: "现场音乐", park: "公园", museum: "博物馆", restaurant: '餐厅', bakery: '烘焙甜点', gallery: '画廊', cinema: '电影院', theater: '剧院', record_store: '唱片店', clothing: '服饰店', garden: '花园'};
 function selectedVenueCategories(source='library') {
@@ -48,6 +48,8 @@ function showError(error) {
     const clarification = /^clarifications\[(\d+)\]$/.exec(field);
     message += interest ? t("err.detailInterest", {n: Number(interest[1])+1}) : clarification ? t("err.detailClarification", {n: Number(clarification[1])+1}) : t("err.detailField", {field});
   }
+  // A missing browser key anywhere in the flow opens the config panel.
+  if (error?.code === "MODEL_KEY_REQUIRED" || error?.code === "QLOO_KEY_REQUIRED") openModelConfig();
   notice(message);
 }
 function setBusy(value, kind = "discover") {
@@ -86,6 +88,7 @@ async function refreshSession() {
 async function request(path, payload, retried = false) {
   const headers = {"Content-Type": "application/json", "X-CSRF-Token": state.csrf};
   if (payload && modelConfig.key) { headers["X-Model-Key"] = modelConfig.key; headers["X-Model-Name"] = modelConfig.name; }
+  if (payload && modelConfig.qlooKey) { headers["X-Qloo-Key"] = modelConfig.qlooKey; }
   const response = await fetch(path, payload ? {method: "POST", headers, body: JSON.stringify(payload)} : {});
   const data = await response.json().catch(() => null);
   // A restarted server drops its in-memory sessions; re-bootstrap once and replay the request.
@@ -520,9 +523,13 @@ async function prepareTaste(){
 
 $("query-form").addEventListener("submit", async (event) => {
   event.preventDefault(); if (state.busy || !state.csrf) return;
-  if(state.inputMode!=="natural"){await prepareTaste();return;}
+  if(state.inputMode!=="natural"){
+    if(!modelConfig.qlooKey && !state.qlooReady){notice(t("qloo.requiredNotice"));openModelConfig();return;}
+    await prepareTaste();return;
+  }
   if(!$("query").value.trim()){notice(t("notice.queryRequired"));return;}
   if(!modelConfig.key && !state.modelReady){notice(t("model.requiredNotice"));openModelConfig();return;}
+  if(!modelConfig.qlooKey && !state.qlooReady){notice(t("qloo.requiredNotice"));openModelConfig();return;}
   resetDraft(); setBusy(true, "parse");
   try {const draft = await job("/api/parse", {query: $("query").value.trim(), city: state.city, area: area()}); renderIntent(draft,!!draft.intent.clarifications.length);} catch (error) {showError(error);} finally {setBusy(false);}
   if(state.draft){const i=state.draft.intent;if(!i.clarifications.length&&!i.strict_city&&!i.novelty_requested&&!i.open_now&&!i.max_budget&&!i.available_minutes)await launchParallel();else $("confirmation").scrollIntoView({behavior:"smooth",block:"start"});}
@@ -551,14 +558,17 @@ document.querySelectorAll("[data-example]").forEach((button) => button.addEventL
   setInputMode("natural"); $("query").value = t(examples[button.dataset.example]); $("query").focus();
 }));
 function modelStatus(){
-  $("model-config-open").classList.toggle("ready", !!(modelConfig.key || state.modelReady));
-  $("model-config-status").textContent = modelConfig.key ? t("model.statusOwn") : state.modelReady ? t("model.statusServer") : t("model.statusNone");
+  const qlooOk = !!(modelConfig.qlooKey || state.qlooReady);
+  const modelOk = !!(modelConfig.key || state.modelReady);
+  $("model-config-open").classList.toggle("ready", qlooOk && modelOk);
+  $("model-config-status").textContent = [qlooOk ? t("model.qlooReady") : t("model.qlooMissing"),
+    modelOk ? t("model.modelReady") : t("model.modelMissing")].join(" · ");
 }
 function openModelConfig(open = true){
   const panel = $("model-config");
   panel.hidden = !open;
   $("model-config-open").setAttribute("aria-expanded", String(open));
-  if (open) {modelStatus(); $("model-key-input").focus();}
+  if (open) {modelStatus(); $("qloo-key-input").focus();}
 }
 $("model-config-open").addEventListener("click", () => openModelConfig($("model-config").hidden));
 $("model-config-close").addEventListener("click", () => openModelConfig(false));
@@ -568,17 +578,22 @@ $("model-name-select").addEventListener("change", () => {
   if (custom) $("model-custom-input").focus();
 });
 $("model-config-save").addEventListener("click", () => {
-  const value = $("model-key-input").value.trim();
-  if (!value) {$("model-config-status").textContent = t("model.empty"); return;}
-  const selected = $("model-name-select").value;
-  const name = selected === "__custom__" ? $("model-custom-input").value.trim() : selected;
-  if (selected === "__custom__" && !name) {$("model-config-status").textContent = t("model.customEmpty"); return;}
-  modelConfig.key = value; modelConfig.name = name;
-  $("model-key-input").value = "";
+  const modelValue = $("model-key-input").value.trim();
+  const qlooValue = $("qloo-key-input").value.trim();
+  if (!modelValue && !qlooValue) {$("model-config-status").textContent = t("model.empty"); return;}
+  if (modelValue) {
+    const selected = $("model-name-select").value;
+    const name = selected === "__custom__" ? $("model-custom-input").value.trim() : selected;
+    if (selected === "__custom__" && !name) {$("model-config-status").textContent = t("model.customEmpty"); return;}
+    modelConfig.key = modelValue; modelConfig.name = name;
+  }
+  if (qlooValue) modelConfig.qlooKey = qlooValue;
+  $("model-key-input").value = ""; $("qloo-key-input").value = "";
   openModelConfig(false); modelStatus(); notice(t("model.saved"));
 });
 $("model-config-clear").addEventListener("click", () => {
-  modelConfig.key = ""; $("model-key-input").value = "";
+  modelConfig.key = ""; modelConfig.qlooKey = "";
+  $("model-key-input").value = ""; $("qloo-key-input").value = "";
   modelStatus(); notice(t("model.cleared"));
 });
 request("/api/session").then((session) => {

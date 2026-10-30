@@ -97,6 +97,7 @@
   $('guess-open').addEventListener('click',async()=>{
     if(state.busy||g.busy||!state.csrf)return;
     if(!modelConfig.key&&!state.modelReady){notice(t('model.requiredNotice'));openModelConfig();return;}
+    if(!modelConfig.qlooKey&&!state.qlooReady){notice(t('qloo.requiredNotice'));openModelConfig();return;}
     dialog.showModal();g.busy=true;
     try{const local=await request('/api/library/browse',{domain:g.domain,query:'',offset:0});g.selected=new Map(local.choices.map(x=>[x.id,x]));g.hydrated=true;}
     catch(e){error(errorMessage(e.code,t('guess.restoreFailed')));g.busy=false;return;}

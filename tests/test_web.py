@@ -174,6 +174,27 @@ class WebTests(unittest.TestCase):
         status, _, raw = self.post("/api/parse", payload)
         self.assertEqual(status, 400); self.assertEqual(json.loads(raw)["error"]["code"], "MODEL_KEY_REQUIRED")
 
+    def test_qloo_key_is_brought_by_the_browser_not_the_server(self):
+        self.app.settings = Settings("", "")  # Deployments ship without built-in keys.
+        payload = {"domain": "all", "page": 0, "query": ""}
+        status, _, raw = self.post("/api/taste/cards", payload)
+        self.assertEqual(status, 400); self.assertEqual(json.loads(raw)["error"]["code"], "QLOO_KEY_REQUIRED")
+        status, _, raw = self.request("POST", "/api/taste/cards", payload, self.cookie, self.csrf, extra={"X-Qloo-Key": "bad key!"})
+        self.assertEqual(status, 400); self.assertEqual(json.loads(raw)["error"]["code"], "QLOO_KEY_INVALID")
+        status, _, raw = self.request("POST", "/api/taste/cards", payload, self.cookie, self.csrf,
+                                      extra={"X-Qloo-Key": "sk-qloo-browser-synthetic"})
+        self.assertEqual(status, 202)
+        self.wait(json.loads(raw)["job_id"])
+        # The browser-supplied key is itself a secret and must not reach the API.
+        status, _, raw = self.request("POST", "/api/taste/cards", {**payload, "query": "sk-qloo-browser-synthetic"},
+                                      self.cookie, self.csrf, extra={"X-Qloo-Key": "sk-qloo-browser-synthetic"})
+        self.assertEqual(status, 202)
+        job = self.wait(json.loads(raw)["job_id"])
+        self.assertEqual(job["status"], "failed"); self.assertEqual(job["error"]["code"], "SENSITIVE_INPUT_REJECTED")
+        # Clearing the header clears the session key again.
+        status, _, raw = self.post("/api/taste/cards", payload)
+        self.assertEqual(status, 400); self.assertEqual(json.loads(raw)["error"]["code"], "QLOO_KEY_REQUIRED")
+
     def test_model_validation_details_reach_browser_without_raw_output(self):
         class InvalidModel:
             model = "synthetic"

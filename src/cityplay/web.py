@@ -79,6 +79,8 @@ class Session:
     # Browser-supplied model credentials: in-memory only, never persisted.
     model_key: str = ""
     model_name: str = ""
+    # Browser-supplied Qloo credential: in-memory only, never persisted.
+    qloo_key: str = ""
 
 
 class Application:
@@ -87,6 +89,7 @@ class Application:
         self.settings = settings or Settings.load()
         self._builtin_model_factory = model_factory is None
         self.model_factory = model_factory or (lambda: DeepSeekClient(self.settings.deepseek_key, self.settings.model))
+        self._builtin_qloo_factory = qloo_factory is None
         self.qloo_factory = qloo_factory or (lambda: QlooClient(self.settings.qloo_key, sender=self.qloo_network, max_calls=40))
         self.verifier_factory = verifier_factory or (lambda: WebsiteVerifier(max_checks=12))
         self.evidence_dir = evidence_dir or ROOT / ".qloo-private" / "stage3"
@@ -126,7 +129,7 @@ class Application:
             if not create or len(self.sessions) >= 16:
                 return None, None
             identifier = identifier if isinstance(identifier,str) and re.fullmatch(r'[A-Za-z0-9_-]{43}',identifier) and self.library.has_profile(identifier) else secrets.token_urlsafe(32)
-            value = Session(profile_id=identifier,qloo=self.qloo_factory(), verifier=self.verifier_factory())
+            value = Session(profile_id=identifier,qloo=self.build_qloo(), verifier=self.verifier_factory())
             self.sessions[identifier] = value
             return identifier, value
 
@@ -134,19 +137,25 @@ class Application:
         # Keys that must never surface verbatim in user input, including any key
         # the browser supplied for this session.
         return tuple(key for key in (self.settings.qloo_key, self.settings.deepseek_key,
-                                     getattr(session, "model_key", "")) if key)
+                                     getattr(session, "model_key", ""), getattr(session, "qloo_key", "")) if key)
 
-    def update_model(self, session, key, name):
-        # A browser tab supplies its own model credentials per request; they are
+    def update_credentials(self, session, model_key, model_name, qloo_key):
+        # A browser tab supplies its own API credentials per request; they are
         # kept in the in-memory session only and an empty header clears them.
-        key = key.strip() if isinstance(key, str) else ""
-        name = name.strip() if isinstance(name, str) else ""
-        if key and not re.fullmatch(r"[A-Za-z0-9_.\-]{8,200}", key):
+        model_key = model_key.strip() if isinstance(model_key, str) else ""
+        model_name = model_name.strip() if isinstance(model_name, str) else ""
+        if model_key and not re.fullmatch(r"[A-Za-z0-9_.\-]{8,200}", model_key):
             raise ServiceError("MODEL_KEY_INVALID", status=400)
         # Any well-formed model id is allowed (new releases shouldn't need a code change).
-        if name and not re.fullmatch(r"[A-Za-z0-9._\-]{1,60}", name):
+        if model_name and not re.fullmatch(r"[A-Za-z0-9._\-]{1,60}", model_name):
             raise ServiceError("MODEL_KEY_INVALID", status=400)
-        session.model_key, session.model_name = key, (name or session.model_name)
+        session.model_key, session.model_name = model_key, (model_name or session.model_name)
+        qloo_key = qloo_key.strip() if isinstance(qloo_key, str) else ""
+        if qloo_key and not re.fullmatch(r"[A-Za-z0-9_.\-]{8,200}", qloo_key):
+            raise ServiceError("QLOO_KEY_INVALID", status=400)
+        if qloo_key != session.qloo_key:
+            session.qloo_key = qloo_key
+            session.qloo = self.build_qloo(session)
 
     def build_model(self, session=None):
         # An explicitly injected factory (tests, local tools) always wins;
@@ -155,6 +164,14 @@ class Application:
             return self.model_factory()
         return DeepSeekClient(getattr(session, "model_key", "") or self.settings.deepseek_key,
                               getattr(session, "model_name", "") or self.settings.model)
+
+    def build_qloo(self, session=None):
+        # An injected factory (tests, local tools) wins; otherwise the
+        # browser-supplied key takes precedence over any built-in key.
+        if not self._builtin_qloo_factory and self.qloo_factory:
+            return self.qloo_factory()
+        return QlooClient(getattr(session, "qloo_key", "") or self.settings.qloo_key,
+                          sender=self.qloo_network, max_calls=40)
 
     def start(self, session, kind, payload):
         with self.lock:
@@ -166,6 +183,9 @@ class Application:
             if kind in {"parse", "guess"} and not (getattr(session, "model_key", "") or self.settings.deepseek_key):
                 # No built-in key ships with the deployment; visitors bring their own.
                 raise ServiceError("MODEL_KEY_REQUIRED", status=400, retryable=False)
+            if kind in {"taste_cards", "discover", "parallel", "compare"} and not (getattr(session, "qloo_key", "") or self.settings.qloo_key):
+                # Cultural search also runs on a visitor-supplied Qloo key.
+                raise ServiceError("QLOO_KEY_REQUIRED", status=400, retryable=False)
             if len(bucket) >= (10 if kind=='taste_cards' else 6):
                 raise ServiceError("LOCAL_REQUEST_LIMIT", status=429)
             if not self.slots.acquire(blocking=False):
@@ -555,7 +575,7 @@ class Handler(BaseHTTPRequestHandler):
             _, session = self.browser_session()
             if not session or not secrets.compare_digest(self.headers.get("X-CSRF-Token", ""), session.csrf):
                 raise ServiceError("INVALID_SESSION_OR_CSRF", status=403)
-            self.server.app.update_model(session, self.headers.get("X-Model-Key", ""), self.headers.get("X-Model-Name", ""))
+            self.server.app.update_credentials(session, self.headers.get("X-Model-Key", ""), self.headers.get("X-Model-Name", ""), self.headers.get("X-Qloo-Key", ""))
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 raise ServiceError("JSON_REQUIRED", status=415)
             size = int(self.headers.get("Content-Length", "0"))
