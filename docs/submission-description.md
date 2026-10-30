@@ -30,6 +30,4 @@ not guaranteed. Website-name matches are shown independently of cultural ranking
 ## Submission links
 
 - Public source repository: https://github.com/millerice/cityplay-ai (public, MIT).
-- Live, externally hosted demo: pending hosting configuration and end-to-end verification.
-
-A locally running preview or video does not fulfill the demo requirement.
+- Live, externally hosted demo: https://cityplay-ai.onrender.com/

@@ -19,9 +19,12 @@ selected directions across 13 verified categories. See [live category validation
 
 ## Try it
 
-Public source: [millerice/cityplay-ai](https://github.com/millerice/cityplay-ai) (MIT).
-External hosting is deferred while functionality is refined. Until it is deployed and
-verified, this project is **not yet ready for submission**.
+- **Live demo:** [https://cityplay-ai.onrender.com/](https://cityplay-ai.onrender.com/)
+- **Public source:** [millerice/cityplay-ai](https://github.com/millerice/cityplay-ai) (MIT)
+
+Open the live demo and paste your own Qloo + model keys via **⚙ API keys** (top left).
+Keys stay for the browser session, survive refresh, and clear when the browser closes.
+Built-in model presets (DeepSeek, OpenAI, Qwen, Kimi, GLM, Groq) use server-side base URLs — pick a model and paste that vendor's key.
 
 Local preview requires Python 3.12+:
 
