@@ -144,6 +144,8 @@ const I18N = {
     "v.adjacent_none.boundary": "Original constraints are kept; no model-invented cultural objects.",
     "v.adjacent_error.title": "Adjacent me", "v.adjacent_error.subtitle": "The association query didn't finish",
     "v.adjacent_error.boundary": "The familiar version is still available; retry later.",
+    "v.alternative.title": "Alternative me", "v.alternative.subtitle": "A new starting point you chose",
+    "v.alternative.boundary": "An exploration direction you picked — not a hidden personality the system discovered.",
     "results.title": "These directions are worth knowing.",
     "results.titlePlan": "A next step is ready.",
     "results.titleEmpty": "Try another direction",
@@ -539,6 +541,8 @@ const I18N = {
     "v.adjacent_none.boundary": "保留原有条件，不用模型虚构新的文化对象。",
     "v.adjacent_error.title": "邻近的我", "v.adjacent_error.subtitle": "本次文化关联查询未完成",
     "v.adjacent_error.boundary": "熟悉版本仍可查看，可稍后重试。",
+    "v.alternative.title": "另一种我", "v.alternative.subtitle": "你主动选择的新起点",
+    "v.alternative.boundary": "由你选择的尝试方向，不是系统发现的隐藏人格。",
     "results.title": "这几个方向，值得了解。",
     "results.titlePlan": "已整理好下一步方案。",
     "results.titleEmpty": "换个方向，继续探索",
@@ -814,8 +818,10 @@ function excludeLabel(id) { return i18nLookup("xcat." + id) || id; }
 function typeLabel(id) { return i18nLookup("type." + id) || id; }
 function cityLabel(id) { return i18nLookup("city." + id) || id; }
 function versionText(version, part, fallback) {
-  const value = i18nLookup("v." + version + "." + part);
-  return value === null ? fallback : value;
+  // Prefer variant (e.g. adjacent_bridge); fall back to id for legacy payloads.
+  const key = typeof version === "string" ? version : (version && (version.variant || version.id));
+  const value = key ? i18nLookup("v." + key + "." + part) : null;
+  return value === null ? (fallback || "") : value;
 }
 function applyElementText(element, value) {
   // Translate only the element's own text run; nested controls (label>select,

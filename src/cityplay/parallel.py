@@ -13,10 +13,11 @@ def public_result(result):
 def build_parallel(session):
     original = copy.deepcopy(session.parallel_versions[0]["intent"] if session.parallel_versions else session.confirmed)
     familiar = copy.deepcopy(session.parallel_versions[0]["result"] if session.parallel_versions else session.parallel_familiar)
-    versions = [{'id':'familiar','variant':'familiar','title':'熟悉的我','subtitle':'从你明确选择的口味出发',
-                 'intent':original,'result':familiar,'path':[], 'boundary':'熟悉指输入口味，不保证地点曾去过或一定喜欢。'}]
+    # Titles are English fallbacks; the browser localizes via variant keys.
+    versions = [{'id':'familiar','variant':'familiar','title':'Familiar me','subtitle':'From the taste you actually chose',
+                 'intent':original,'result':familiar,'path':[], 'boundary':'Familiar refers to your input taste; it does not guarantee visited or liked places.'}]
     if session.taste_starting_mode=='curiosity':
-        versions[0].update(variant='familiar_curious',title='想尝试的我',subtitle='从你想了解的对象出发',boundary='这是尝试意向，尚未标记为你已经喜欢的口味。')
+        versions[0].update(variant='familiar_curious',title='Curious me',subtitle='From objects you want to learn about',boundary='This is an intent to try, not yet marked as a taste you already love.')
     inputs = familiar.get('taste_inputs', [])
     entities = [x['id'] for x in inputs if x.get('type','').startswith('urn:entity:')]
     tags = [x['id'] for x in inputs if x.get('type','').startswith('urn:tag:')]
@@ -36,17 +37,17 @@ def build_parallel(session):
             result=DiscoveryEngine(session.qloo,session.verifier).run(Intent.from_dict(values),Area(**session.area),
                 selections={'interests.0':bridge['entity_id']},seen_ids=list(session.feedback),
                 independent_bookstore=session.independent_bookstore,prefer_nearby=session.prefer_nearby)
-            versions.append({'id':'adjacent','variant':'adjacent_bridge','title':'邻近的我','subtitle':'沿文化关联，多走一步',
+            versions.append({'id':'adjacent','variant':'adjacent_bridge','title':'Adjacent me','subtitle':'One step further along cultural associations',
                 'intent':values,'result':result,
                 'path':[{'from':[x['name'] for x in inputs],'to':bridge['name'],
                          'evidence':recommendation_evidence(bridge,inputs),'provider':'Qloo Insights'}],
-                'boundary':'这是图谱关联方向，不表示你不认识这位音乐人，也不代表人格或心理距离。'})
+                'boundary':'This is a graph-association direction; it does not mean you do not know the artist, and it is not a personality or psychological distance.'})
         else:
-            versions.append({'id':'adjacent','variant':'adjacent_none','title':'邻近的我','subtitle':'暂未找到可验证的文化桥梁',
+            versions.append({'id':'adjacent','variant':'adjacent_none','title':'Adjacent me','subtitle':'No verifiable cultural bridge found this round',
                 'intent':original,'result':{'status':'empty','cards':[],'taste_inputs':[]},'path':[],
-                'boundary':'保留原有条件，不用模型虚构新的文化对象。'})
+                'boundary':'Original constraints are kept; no model-invented cultural objects.'})
     except ServiceError as error:
-        versions.append({'id':'adjacent','variant':'adjacent_error','title':'邻近的我','subtitle':'本次文化关联查询未完成',
+        versions.append({'id':'adjacent','variant':'adjacent_error','title':'Adjacent me','subtitle':'The association query did not finish',
             'intent':original,'result':{'status':'error','cards':[],'error':{'code':error.code,'retryable':error.retryable}},
-            'path':[],'boundary':'熟悉版本仍可查看，可稍后重试。'})
+            'path':[],'boundary':'The familiar version is still available; retry later.'})
     return versions

@@ -34,4 +34,10 @@ ctx.setLang('en');
 assert.equal(label.children[0].nodeValue,I18N.en['library.city']);
 assert.equal(label.children.length,2); // still exactly text + select after a round trip
 assert.equal(bare.children.filter(n=>n.nodeType===3&&n.nodeValue.trim()).length,1); // no duplicate text runs
+// Parallel version copy must use variant keys — never leak server Chinese fallbacks in EN.
+assert.equal(ctx.versionText({id:'familiar',variant:'familiar',title:'熟悉的我'},'title','熟悉的我'),I18N.en['v.familiar.title']);
+assert.equal(ctx.versionText({id:'adjacent',variant:'adjacent_bridge',title:'邻近的我'},'title','邻近的我'),I18N.en['v.adjacent_bridge.title']);
+assert.equal(ctx.versionText({id:'alternative',variant:'alternative',title:'另一种我'},'title','另一种我'),I18N.en['v.alternative.title']);
+ctx.setLang('zh');
+assert.equal(ctx.versionText({variant:'familiar',title:'Familiar me'},'title','Familiar me'),I18N.zh['v.familiar.title']);
 console.log('i18n DOM: nested controls survive language switches, text runs replaced in place passed');

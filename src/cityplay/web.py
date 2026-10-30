@@ -420,8 +420,8 @@ class Application:
             result=DiscoveryEngine(session.qloo,session.verifier).run(Intent.from_dict(values),Area(**session.area),
                 seen_ids=list(session.feedback),independent_bookstore=session.independent_bookstore,prefer_nearby=session.prefer_nearby,
                 selections={'interests.0':session.taste_curiosity['id']} if session.taste_curiosity and alternative['query']==session.taste_curiosity['name'] else {})
-            session.parallel_versions.append({'id':'alternative','title':'另一种我','subtitle':'你主动选择的新起点',
-                'intent':values,'result':result,'path':[],'boundary':'由你选择的尝试方向，不是系统发现的隐藏人格。'})
+            session.parallel_versions.append({'id':'alternative','variant':'alternative','title':'Alternative me','subtitle':'A new starting point you chose',
+                'intent':values,'result':result,'path':[],'boundary':'An exploration direction you picked — not a hidden personality the system discovered.'})
         result={'status':'parallel','versions':[{**v,'result':public_result(v['result'])} for v in session.parallel_versions]}
         if all(v['result'].get('status') in {'partial','empty'} for v in session.parallel_versions):self.library.put_snapshot(session.profile_id,context,result)
         return result
