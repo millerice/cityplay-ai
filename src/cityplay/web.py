@@ -28,6 +28,7 @@ from .profile import validate_answers, generate, confirm
 from .parallel import build_parallel, public_result
 from .taste_cards import load_cards, selected_tastes
 from .library import LibraryStore
+from .models import MODEL_BY_ID, public_model_catalog
 
 PRESETS = {
     "new_york": {"lat": 40.722668, "lon": -73.99823, "label": "纽约下城示例中心"},
@@ -146,8 +147,8 @@ class Application:
         model_name = model_name.strip() if isinstance(model_name, str) else ""
         if model_key and not re.fullmatch(r"[A-Za-z0-9_.\-]{8,200}", model_key):
             raise ServiceError("MODEL_KEY_INVALID", status=400)
-        # Any well-formed model id is allowed (new releases shouldn't need a code change).
-        if model_name and not re.fullmatch(r"[A-Za-z0-9._\-]{1,60}", model_name):
+        # Only curated presets are accepted; their base URLs stay server-side.
+        if model_name and model_name not in MODEL_BY_ID:
             raise ServiceError("MODEL_KEY_INVALID", status=400)
         session.model_key, session.model_name = model_key, (model_name or session.model_name)
         qloo_key = qloo_key.strip() if isinstance(qloo_key, str) else ""
@@ -556,7 +557,7 @@ class Handler(BaseHTTPRequestHandler):
             identifier, session = self.browser_session(create=True)
             if not session:
                 return self.respond(429, {"error": {"code": "SESSION_LIMIT"}})
-            return self.respond(200, {"csrf": session.csrf, "presets": PRESETS,
+            return self.respond(200, {"csrf": session.csrf, "presets": PRESETS, "models": public_model_catalog(),
                        "configured": {"qloo": bool(self.server.app.settings.qloo_key), "model": bool(self.server.app.settings.deepseek_key)}}, cookie=identifier)
         if path.startswith("/api/jobs/"):
             _, session = self.browser_session()

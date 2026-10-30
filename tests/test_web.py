@@ -160,11 +160,14 @@ class WebTests(unittest.TestCase):
         self.assertEqual(status, 202)
         result = self.wait(json.loads(raw)["job_id"])["result"]
         self.assertTrue(result["intent"]["interests"])
-        # Any well-formed model id is accepted, not only the presets.
+        # Built-in presets are accepted; unknown model ids are rejected.
         status, _, raw = self.request("POST", "/api/parse", payload, self.cookie, self.csrf,
                                       extra={"X-Model-Key": "sk-browser-synthetic-key", "X-Model-Name": "deepseek-reasoner"})
         self.assertEqual(status, 202)
         self.wait(json.loads(raw)["job_id"])
+        status, _, raw = self.request("POST", "/api/parse", payload, self.cookie, self.csrf,
+                                      extra={"X-Model-Key": "sk-browser-synthetic-key", "X-Model-Name": "not-a-real-model"})
+        self.assertEqual(status, 400); self.assertEqual(json.loads(raw)["error"]["code"], "MODEL_KEY_INVALID")
         # The browser-supplied key is itself a secret and must not reach the model.
         status, _, raw = self.request("POST", "/api/parse", {**payload, "query": "places like sk-browser-synthetic-key"},
                                       self.cookie, self.csrf, extra={"X-Model-Key": "sk-browser-synthetic-key"})

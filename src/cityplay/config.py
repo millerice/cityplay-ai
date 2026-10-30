@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+from .models import DEFAULT_MODEL_ID, MODEL_BY_ID
 
 ROOT = Path(__file__).resolve().parents[2]
 QLOO_BASE = "https://hackathon.api.qloo.com"
@@ -24,16 +25,16 @@ def local_values(path: Path) -> dict[str, str]:
 class Settings:
     qloo_key: str = field(default="", repr=False)
     deepseek_key: str = field(default="", repr=False)
-    model: str = "deepseek-v4-pro"
+    model: str = DEFAULT_MODEL_ID
 
     @classmethod
     def load(cls, path: Path | None = None):
         values = local_values(path or ROOT / ".env.local")
         def get(name):
             return os.environ.get(name) or values.get(name, "")
-        model = get("DEEPSEEK_MODEL") or "deepseek-v4-pro"
-        if model not in {"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-flash"}:
-            raise ValueError("Unsupported DeepSeek model identifier")
+        model = get("DEEPSEEK_MODEL") or DEFAULT_MODEL_ID
+        if model not in MODEL_BY_ID:
+            raise ValueError("Unsupported model identifier")
         return cls(get("QLOO_API_KEY") or get("APIKey"), get("DEEPSEEK_API_KEY"), model)
 
     def redact(self, text: str) -> str:

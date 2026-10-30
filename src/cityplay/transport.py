@@ -6,7 +6,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from .config import QLOO_BASE, DEEPSEEK_BASE
+from .config import QLOO_BASE
+from .models import ALLOWED_MODEL_BASES, resolve_model
 
 
 class ServiceError(Exception):
@@ -127,8 +128,18 @@ class QlooClient:
 
 
 class DeepSeekClient:
+    """OpenAI-compatible chat client; preset id selects a fixed allowlisted base URL."""
+
     def __init__(self, key, model="deepseek-v4-pro", sender=network):
-        self._key, self.model, self._sender = key, model, sender
+        preset = resolve_model(model)
+        if preset.base_url not in ALLOWED_MODEL_BASES:
+            raise ServiceError("MODEL_KEY_INVALID", status=400)
+        self._key = key
+        self.model = preset.api_model
+        self.preset_id = preset.id
+        self._base = preset.base_url.rstrip("/")
+        self._thinking_disable = preset.thinking_disable
+        self._sender = sender
         self.trace = []
 
     def parse_json(self, system, query):
@@ -136,13 +147,19 @@ class DeepSeekClient:
             raise ServiceError("DEEPSEEK_AUTH_MISSING")
         if self._key in query:
             raise ServiceError("SENSITIVE_INPUT_REJECTED")
-        body = json.dumps({"model": self.model, "messages": [
-            {"role": "system", "content": system}, {"role": "user", "content": query}],
-            "thinking": {"type": "disabled"}, "max_tokens": getattr(self, "max_tokens", 1200),
-            "response_format": {"type": "json_object"}, "stream": False}).encode()
-        response = self._sender("POST", DEEPSEEK_BASE + "/chat/completions",
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": query}],
+            "max_tokens": getattr(self, "max_tokens", 1200),
+            "response_format": {"type": "json_object"},
+            "stream": False,
+        }
+        if self._thinking_disable:
+            payload["thinking"] = {"type": "disabled"}
+        body = json.dumps(payload).encode()
+        response = self._sender("POST", self._base + "/chat/completions",
                                 {"Authorization": "Bearer " + self._key, "Content-Type": "application/json"}, body, timeout=30)
-        self.trace.append({"tool": "deepseek", "model": self.model, "http_status": response.status})
+        self.trace.append({"tool": "deepseek", "model": self.model, "preset": self.preset_id, "http_status": response.status})
         if response.status != 200:
             raise ServiceError("DEEPSEEK_HTTP_ERROR", status=response.status)
         try:

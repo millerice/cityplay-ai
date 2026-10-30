@@ -269,10 +269,19 @@ class TransportTests(unittest.TestCase):
             return Response(200, {}, {"model": "synthetic-model", "choices": [{"finish_reason": "stop", "message": {"content": '{"city":null}'}}]})
         client = DeepSeekClient("synthetic-model-secret", sender=sender)
         self.assertEqual(client.parse_json("Return JSON", "synthetic query"), {"city": None})
+        self.assertEqual(captured[0][1], "https://api.deepseek.com/chat/completions")
         body = json.loads(captured[0][3])
         self.assertEqual(body["response_format"], {"type": "json_object"})
         self.assertEqual(body["max_tokens"], 1200)
+        self.assertEqual(body["thinking"], {"type": "disabled"})
         self.assertNotIn("synthetic-model-secret", json.dumps(client.trace))
+        captured.clear()
+        openai = DeepSeekClient("synthetic-model-secret", model="gpt-4o-mini", sender=sender)
+        self.assertEqual(openai.parse_json("Return JSON", "synthetic query"), {"city": None})
+        self.assertEqual(captured[0][1], "https://api.openai.com/v1/chat/completions")
+        openai_body = json.loads(captured[0][3])
+        self.assertEqual(openai_body["model"], "gpt-4o-mini")
+        self.assertNotIn("thinking", openai_body)
 
 
 class VerificationAndIntentTests(unittest.TestCase):

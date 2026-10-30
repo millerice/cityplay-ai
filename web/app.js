@@ -2,9 +2,83 @@
 
 const $ = (id) => document.getElementById(id);
 const state = {city: "new_york", csrf: null, presets: {}, draft: null, busy: false, result: null, dirty: false, confirmedIntent: null, qlooReady: null, modelReady: null};
-// Browser-supplied API credentials: kept only in this tab's memory. Never
-// written to storage or disk; closing the tab clears them for good.
+// Browser-supplied API credentials: sessionStorage keeps them across refresh
+// in this browser session. Closing the browser (or using another browser)
+// clears them; they are never written to durable localStorage.
+const MODEL_CONFIG_STORAGE_KEY = "cityplay.modelConfig";
 const modelConfig = {key: "", name: "deepseek-v4-pro", qlooKey: ""};
+function readStoredModelConfig() {
+  try {
+    const raw = sessionStorage.getItem(MODEL_CONFIG_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      key: typeof parsed.key === "string" ? parsed.key : "",
+      name: typeof parsed.name === "string" && parsed.name ? parsed.name : "deepseek-v4-pro",
+      qlooKey: typeof parsed.qlooKey === "string" ? parsed.qlooKey : "",
+    };
+  } catch (_) {
+    return null;
+  }
+}
+function writeStoredModelConfig() {
+  try {
+    if (!modelConfig.key && !modelConfig.qlooKey) {
+      sessionStorage.removeItem(MODEL_CONFIG_STORAGE_KEY);
+      return;
+    }
+    sessionStorage.setItem(MODEL_CONFIG_STORAGE_KEY, JSON.stringify({
+      key: modelConfig.key,
+      name: modelConfig.name,
+      qlooKey: modelConfig.qlooKey,
+    }));
+  } catch (_) { /* Private mode or storage blocked; keys still work for this page load. */ }
+}
+function clearStoredModelConfig() {
+  try { sessionStorage.removeItem(MODEL_CONFIG_STORAGE_KEY); } catch (_) { /* ignore */ }
+}
+function populateModelSelect(models) {
+  const select = $("model-name-select");
+  if (!select || !Array.isArray(models) || !models.length) return;
+  const previous = modelConfig.name || select.value;
+  select.replaceChildren();
+  const groups = new Map();
+  for (const item of models) {
+    const provider = LangState.lang === "zh" ? (item.provider_zh || item.provider) : item.provider;
+    if (!groups.has(provider)) groups.set(provider, []);
+    groups.get(provider).push(item);
+  }
+  for (const [provider, items] of groups) {
+    const group = document.createElement("optgroup");
+    group.label = provider;
+    for (const item of items) {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = LangState.lang === "zh" ? (item.label_zh || item.label) : item.label;
+      group.append(option);
+    }
+    select.append(group);
+  }
+  if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+  else {
+    select.value = models[0].id;
+    modelConfig.name = select.value;
+  }
+}
+function syncModelNameUI() {
+  const select = $("model-name-select");
+  if (!select || !select.options.length) return;
+  if ([...select.options].some((option) => option.value === modelConfig.name)) select.value = modelConfig.name;
+  else modelConfig.name = select.value || "deepseek-v4-pro";
+}
+(function restoreModelConfig() {
+  const stored = readStoredModelConfig();
+  if (!stored) return;
+  modelConfig.key = stored.key;
+  modelConfig.name = stored.name;
+  modelConfig.qlooKey = stored.qlooKey;
+})();
 // Canonical zh labels remain the parsing/lookup source; display goes through categoryLabel().
 const categories = {bookstore: "书店", coffee: "咖啡", live_music: "现场音乐", park: "公园", museum: "博物馆", restaurant: '餐厅', bakery: '烘焙甜点', gallery: '画廊', cinema: '电影院', theater: '剧院', record_store: '唱片店', clothing: '服饰店', garden: '花园'};
 function selectedVenueCategories(source='library') {
@@ -557,50 +631,87 @@ document.querySelectorAll("[data-example]").forEach((button) => button.addEventL
   const examples = {books: "example.books", coffee: "example.coffee", movie: "example.movie"};
   setInputMode("natural"); $("query").value = t(examples[button.dataset.example]); $("query").focus();
 }));
+function syncKeyInput(inputId, badgeId, hasBrowserKey, hasServerKey) {
+  const input = $(inputId);
+  const badge = $(badgeId);
+  if (!input) return;
+  const filled = !!(hasBrowserKey || hasServerKey);
+  input.dataset.filled = String(filled);
+  input.classList.toggle("is-filled", filled);
+  if (!input.value) {
+    input.placeholder = filled
+      ? t(hasBrowserKey ? "model.filledPlaceholder" : "model.serverPlaceholder")
+      : t(inputId === "qloo-key-input" ? "model.qlooPlaceholder" : "model.keyPlaceholder");
+  }
+  if (badge) {
+    badge.hidden = !filled;
+    badge.textContent = t(hasBrowserKey ? "model.filledBadge" : "model.serverBadge");
+  }
+}
+function syncKeyInputs() {
+  syncKeyInput("qloo-key-input", "qloo-key-badge", !!modelConfig.qlooKey, !!state.qlooReady);
+  syncKeyInput("model-key-input", "model-key-badge", !!modelConfig.key, !!state.modelReady);
+}
 function modelStatus(){
   const qlooOk = !!(modelConfig.qlooKey || state.qlooReady);
   const modelOk = !!(modelConfig.key || state.modelReady);
   $("model-config-open").classList.toggle("ready", qlooOk && modelOk);
   $("model-config-status").textContent = [qlooOk ? t("model.qlooReady") : t("model.qlooMissing"),
     modelOk ? t("model.modelReady") : t("model.modelMissing")].join(" · ");
+  syncKeyInputs();
 }
 function openModelConfig(open = true){
   const panel = $("model-config");
   panel.hidden = !open;
   $("model-config-open").setAttribute("aria-expanded", String(open));
-  if (open) {modelStatus(); $("qloo-key-input").focus();}
+  if (open) {
+    $("qloo-key-input").value = "";
+    $("model-key-input").value = "";
+    modelStatus();
+    $("qloo-key-input").focus();
+  }
 }
 $("model-config-open").addEventListener("click", () => openModelConfig($("model-config").hidden));
 $("model-config-close").addEventListener("click", () => openModelConfig(false));
 $("model-name-select").addEventListener("change", () => {
-  const custom = $("model-name-select").value === "__custom__";
-  $("model-custom-input").hidden = !custom;
-  if (custom) $("model-custom-input").focus();
+  modelConfig.name = $("model-name-select").value || modelConfig.name;
+  if (modelConfig.key || modelConfig.qlooKey) writeStoredModelConfig();
 });
+for (const id of ["qloo-key-input", "model-key-input"]) {
+  $(id).addEventListener("input", () => {
+    if ($(id).value) {$(id).classList.remove("is-filled"); $(id).dataset.filled = "false";}
+    else syncKeyInputs();
+  });
+}
 $("model-config-save").addEventListener("click", () => {
   const modelValue = $("model-key-input").value.trim();
   const qlooValue = $("qloo-key-input").value.trim();
-  if (!modelValue && !qlooValue) {$("model-config-status").textContent = t("model.empty"); return;}
-  if (modelValue) {
-    const selected = $("model-name-select").value;
-    const name = selected === "__custom__" ? $("model-custom-input").value.trim() : selected;
-    if (selected === "__custom__" && !name) {$("model-config-status").textContent = t("model.customEmpty"); return;}
-    modelConfig.key = modelValue; modelConfig.name = name;
-  }
+  const alreadyConfigured = !!(modelConfig.key || modelConfig.qlooKey || state.qlooReady || state.modelReady);
+  if (!modelValue && !qlooValue && !alreadyConfigured) {$("model-config-status").textContent = t("model.empty"); return;}
+  modelConfig.name = $("model-name-select").value || modelConfig.name;
+  if (modelValue) modelConfig.key = modelValue;
   if (qlooValue) modelConfig.qlooKey = qlooValue;
+  writeStoredModelConfig();
   $("model-key-input").value = ""; $("qloo-key-input").value = "";
   openModelConfig(false); modelStatus(); notice(t("model.saved"));
+  if (modelConfig.qlooKey || state.qlooReady) document.dispatchEvent(new Event("cityplay-keys-ready"));
 });
 $("model-config-clear").addEventListener("click", () => {
   modelConfig.key = ""; modelConfig.qlooKey = "";
+  clearStoredModelConfig();
   $("model-key-input").value = ""; $("qloo-key-input").value = "";
   modelStatus(); notice(t("model.cleared"));
 });
+syncModelNameUI();
 request("/api/session").then((session) => {
-  state.csrf = session.csrf; state.presets = session.presets; state.qlooReady = session.configured.qloo; state.modelReady = session.configured.model; document.dispatchEvent(new Event("cityplay-ready"));
+  state.csrf = session.csrf; state.presets = session.presets; state.qlooReady = session.configured.qloo; state.modelReady = session.configured.model;
+  state.models = session.models || [];
+  populateModelSelect(state.models);
+  syncModelNameUI();
+  document.dispatchEvent(new Event("cityplay-ready"));
   $("service-status-text").textContent = session.configured.qloo ? t("status.ready") : t("status.unconfigured");
   modelStatus();
-  if (!session.configured.qloo) notice(t("notice.configureQloo"));
+  if (!session.configured.qloo && !modelConfig.qlooKey) notice(t("notice.configureQloo"));
 }).catch(() => {$("service-status-text").textContent = t("status.unreachable"); notice(t("notice.serviceUnreachable"));});
 
 $("compare-button").addEventListener("click", async () => {
@@ -635,6 +746,7 @@ $('edit-exploration').addEventListener('click',()=>{if(!state.busy)returnToEdito
 // Re-render dynamic sections when the language changes; in-progress edits are kept.
 document.addEventListener('cityplay-lang-changed',()=>{
   applyAreaLabels();
+  if(state.models)populateModelSelect(state.models);
   if(state.qlooReady!==null)$('service-status-text').textContent=state.qlooReady?t('status.ready'):t('status.unconfigured');
   if(document.getElementById('model-config-status'))modelStatus();
   if(state.busy)return;

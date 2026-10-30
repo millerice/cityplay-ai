@@ -32,7 +32,8 @@ def main(argv=None):
     parser.add_argument("--lon", type=float)
     parser.add_argument("--radius-m", type=int, default=20000)
     parser.add_argument("--credentials", type=Path, help="Private .env file; defaults to .env.local")
-    parser.add_argument("--model", choices=["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-flash"])
+    from .models import MODEL_BY_ID
+    parser.add_argument("--model", choices=sorted(MODEL_BY_ID))
     args = parser.parse_args(argv)
     try:
         settings = Settings.load(args.credentials)

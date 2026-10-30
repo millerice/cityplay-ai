@@ -96,7 +96,25 @@ function parseVenueExclusions(value,labels){
   function searchPage(){
     l.searchResults=rankCulturalResults(l.searchResults,l.query);l.total=l.searchResults.length;l.cards=l.searchResults.slice(l.offset,l.offset+6);render();
   }
-  async function browse(){
+  function qlooAvailable(){return !!(modelConfig.qlooKey||state.qlooReady);}
+  async function discoverMore({auto=false}={}){
+    if(l.busy||state.busy||!state.csrf)return false;
+    if($('library-query').value.trim()){await searchOnline();return true;}
+    if(!qlooAvailable()){
+      if(!auto){notice(t('qloo.requiredNotice'));openModelConfig();}
+      return false;
+    }
+    l.query='';l.searchResults=null;l.busy=true;message(t('library.findingMore'));render();
+    try{
+      await job('/api/taste/cards',{domain:l.domain,page:(l.editorPage=l.total?1-(l.editorPage||0):0),query:''});
+      l.offset=0;await browse({skipAuto:true});
+      return true;
+    }catch(e){
+      message(errorMessage(e.code,t('library.moreFailed')));
+      return false;
+    }finally{l.busy=false;render();}
+  }
+  async function browse({skipAuto=false}={}){
     const query=l.query,domain=l.domain,offset=l.offset;
     try{
       const r=await request('/api/library/browse',{domain,query,offset});
@@ -105,6 +123,8 @@ function parseVenueExclusions(value,labels){
       if(l.query&&l.searchResults!==null){render();return;}
       l.cards=r.cards;l.total=r.total;render();
       message(r.total?t('library.browseCount',{count:r.total}):t('library.browseEmpty'));
+      // Local discovery feed is empty: pull editorial starters once Qloo is ready.
+      if(!skipAuto&&!l.query&&!l.cards.length&&qlooAvailable())await discoverMore({auto:true});
     }catch(e){message(errorMessage(e.code,t('library.browseFailed')));}
   }
   async function searchOnline(){
@@ -138,14 +158,7 @@ function parseVenueExclusions(value,labels){
     if(l.busy||state.busy)return;l.offset=l.offset+6<l.total?l.offset+6:0;
     if(l.searchResults!==null)searchPage();else browse();
   });
-  $('library-refresh').addEventListener('click',async()=>{
-    if(l.busy||state.busy)return;
-    if($('library-query').value.trim()){await searchOnline();return;}
-    l.query='';l.searchResults=null;l.busy=true;message(t('library.findingMore'));render();
-    try{await job('/api/taste/cards',{domain:l.domain,page:(l.editorPage=l.total?1-(l.editorPage||0):0),query:''});l.offset=0;await browse();}
-    catch(e){message(errorMessage(e.code,t('library.moreFailed')));}
-    finally{l.busy=false;render();}
-  });
+  $('library-refresh').addEventListener('click',()=>{discoverMore();});
   $('library-clear').addEventListener('click',async()=>{if(l.busy||state.busy)return;try{await request('/api/library/clear',{});l.choices=[];render();message(t('library.cleared'));}catch(e){message(errorMessage(e.code,t('library.clearFailed')));}});
   $('library-city').addEventListener('change',()=>setCity($('library-city').value));
   function renderVenueChoices(){
@@ -207,8 +220,12 @@ function parseVenueExclusions(value,labels){
     }catch(e){message(errorMessage(e.code,t('library.goFailed')));}
     finally{l.busy=false;render();}
   });
-  // Starts after the existing session initialization; this read never calls Qloo.
-  if(state.csrf)browse();else document.addEventListener('cityplay-ready',browse,{once:true});
-  document.addEventListener('cityplay-library-updated',browse);
+  // Starts after the existing session initialization; empty local feeds may then call Qloo once.
+  if(state.csrf)browse();else document.addEventListener('cityplay-ready',()=>browse(),{once:true});
+  document.addEventListener('cityplay-library-updated',()=>browse());
+  document.addEventListener('cityplay-keys-ready',()=>{
+    if(l.query||l.cards.length||l.busy||state.busy)return;
+    discoverMore({auto:true});
+  });
   document.addEventListener('cityplay-lang-changed',()=>{renderVenueChoices();$('venue-help').textContent=t($('venue-custom').getAttribute('aria-pressed')==='true'?'venue.helpCustom':'venue.helpAuto');render();});
 })();
