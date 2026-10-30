@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: cityplay-ai
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: QLOO_API_KEY
+        sync: false # Hackathon credential; set it in Render's dashboard, never commit it.
+      - key: DEEPSEEK_MODEL
+        value: deepseek-v4-pro
+      - key: CITYPLAY_QLOO_HOURLY_BUDGET
+        value: "120"
+    # DEEPSEEK_API_KEY is intentionally omitted: visitors bring their own model
+    # key via the in-app "Model key" panel. PUBLIC_ORIGIN is auto-derived from
+    # RENDER_EXTERNAL_URL at boot.

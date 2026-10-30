@@ -638,7 +638,10 @@ def main():
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8787")))
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
-    server = create_server(args.port, Application(process_budget=int(os.environ.get("CITYPLAY_QLOO_HOURLY_BUDGET", "120"))), host=args.host, public_origin=os.environ.get("PUBLIC_ORIGIN"))
+    # Hosting platforms assign the public HTTPS origin at deploy time;
+    # RENDER_EXTERNAL_URL is Render's injected equivalent of PUBLIC_ORIGIN.
+    public_origin = os.environ.get("PUBLIC_ORIGIN") or os.environ.get("RENDER_EXTERNAL_URL")
+    server = create_server(args.port, Application(process_budget=int(os.environ.get("CITYPLAY_QLOO_HOURLY_BUDGET", "120"))), host=args.host, public_origin=public_origin)
     print(f"CityPlay AI local preview: http://127.0.0.1:{server.server_address[1]}", flush=True)
     try:
         server.serve_forever()
